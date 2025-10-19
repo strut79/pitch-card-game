@@ -36,3 +36,10 @@ html, body {
 		.drawer-content-area {
 			height: 60svh;
 		}
+        .player-name {
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            text-align: center;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }

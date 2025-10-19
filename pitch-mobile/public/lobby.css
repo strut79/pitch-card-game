@@ -1,0 +1,30 @@
+#lobby-container {
+    text-align: center;
+}
+
+.teams-container {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.team {
+    width: 45%;
+    background-color: #4a5568;
+    border-radius: 0.5rem;
+    padding: 1rem;
+}
+
+.player-list {
+    list-style: none;
+    padding: 0;
+}
+
+.player-list li {
+    padding: 0.5rem;
+    background-color: #2d3748;
+    border-radius: 0.25rem;
+    margin-bottom: 0.5rem;
+}
