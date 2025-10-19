@@ -76,10 +76,10 @@ export const shuffle = (deck) => {
 export const createNewGame = (user) => {
     const deck = createDeck();
     const players = [
-        { id: user.uid, name: user.displayName || 'Player 1', hand: [], originalHand: [], orientation: 'bottom', bid: 0, hasBid: false },
-        { id: 'player2', name: 'Player 2', hand: [], originalHand: [], orientation: 'left', bid: 0, hasBid: false },
-        { id: 'player3', name: 'Player 3', hand: [], originalHand: [], orientation: 'top', bid: 0, hasBid: false },
-        { id: 'player4', name: 'Player 4', hand: [], originalHand: [], orientation: 'right', bid: 0, hasBid: false }
+        { id: user.uid, name: user.displayName || 'Player 1', hand: [], originalHand: [], orientation: 'bottom', bid: 0, hasBid: false, isOnline: true },
+        { id: 'player2', name: 'Player 2', hand: [], originalHand: [], orientation: 'left', bid: 0, hasBid: false, isOnline: false },
+        { id: 'player3', name: 'Player 3', hand: [], originalHand: [], orientation: 'top', bid: 0, hasBid: false, isOnline: false },
+        { id: 'player4', name: 'Player 4', hand: [], originalHand: [], orientation: 'right', bid: 0, hasBid: false, isOnline: false }
     ];
 
     for (let i = 0; i < CARDS_DEALT * PLAYER_COUNT; i++) {

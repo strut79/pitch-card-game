@@ -1,3 +1,4 @@
+console.log("main.js executed");
 import { auth, db } from './firebase.js';
 import { GoogleAuthProvider, signInWithPopup, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 import { createGame, onGameUpdate, updateGame } from './firestore.js';
@@ -49,18 +50,24 @@ let gameId = null;
 
 // --- Auth ---
 onAuthStateChanged(auth, (user) => {
+    console.log("onAuthStateChanged called");
     if (user) {
+        console.log("User is logged in:", user);
         currentUser = user;
         hideAuthContainer();
         // After login, check if there is a game ID in the URL
         const urlParams = new URLSearchParams(window.location.search);
         const urlGameId = urlParams.get('game');
+        console.log("urlGameId:", urlGameId);
         if (urlGameId) {
+            console.log("Joining game...");
             joinGame(urlGameId);
         } else {
+            console.log("Starting a new game...");
             runGame();
         }
     } else {
+        console.log("User is not logged in.");
         currentUser = null;
         showAuthContainer();
     }
@@ -87,16 +94,21 @@ const handleAnonymousLogin = async () => {
 
 // --- Game Logic: Core ---
 const startGame = async () => {
+    console.log("Creating a new game...");
     gameData = createNewGame(currentUser);
+    console.log("Game data created:", gameData);
     gameId = await createGame(gameData);
+    console.log("Game created with ID:", gameId);
     // Add gameId to the URL so other players can join
-    window.history.replaceState(null, null, `?game=${gameId}`);
+    window.history.pushState(null, null, `?game=${gameId}`);
+    console.log("URL updated.");
     onGameUpdate(gameId, (newGameData) => {
         handleStateChanges(newGameData);
     });
 };
 
 const joinGame = (id) => {
+    uiHelpers = initUI(handleCardClick, handleBid, handleTrumpSelection, handleDiscard, startGame, startNewRound, currentUser);
     gameId = id;
     onGameUpdate(gameId, (newGameData) => {
         handleStateChanges(newGameData);

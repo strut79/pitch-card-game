@@ -14,7 +14,7 @@ let playerStatusDisplayElements = [];
 let gameOverOverlay, playAgainButton;
 let team1Drawer, team2Drawer, team1DrawerContent, team2DrawerContent, team1DrawerTab, team2DrawerTab;
 let remainingDeckDisplay, widowHandEl;
-let authContainer;
+let authContainer = document.getElementById('auth-container');
 
 export const initUI = (handleCardClick, handleBid, handleTrumpSelection, handleDiscard, startGame, startNewRound, currentUser) => {
     playerHandElements = [document.getElementById('player1-hand'), document.getElementById('player2-hand'), document.getElementById('player3-hand'), document.getElementById('player4-hand')];
@@ -57,7 +57,6 @@ export const initUI = (handleCardClick, handleBid, handleTrumpSelection, handleD
     team2DrawerTab = document.getElementById('team2-drawer-tab');
     remainingDeckDisplay = document.getElementById('remaining-deck-display');
     widowHandEl = document.getElementById('widow-hand');
-    authContainer = document.getElementById('auth-container');
 
     document.getElementById('full-reset-button').addEventListener('click', startGame);
     document.getElementById('discard-button').addEventListener('click', handleDiscard);
@@ -487,6 +486,7 @@ export const showGameOver = (gameData) => {
 };
 
 export const showAuthContainer = () => {
+    console.log("showAuthContainer called");
     if (authContainer) authContainer.classList.remove('hidden');
 };
 
