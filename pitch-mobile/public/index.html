@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+	<title>4-Player Pitch Card Game</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="select-none bg-gray-800 text-white min-h-screen">
+
+    <div id="auth-container" class="hidden w-full h-full absolute inset-0 bg-gray-800 z-50 flex flex-col items-center justify-center">
+        <h1 class="text-4xl font-bold mb-8">Pitch Online</h1>
+        <div class="flex flex-col gap-4">
+            <button id="login-google" class="bg-blue-500 text-white font-bold py-2 px-4 rounded">Login with Google</button>
+            <button id="login-anonymous" class="bg-gray-500 text-white font-bold py-2 px-4 rounded">Play as Guest</button>
+        </div>
+    </div>
+
+	<div id="game-container" class="w-full mx-auto flex flex-col">
+
+		<!-- Header: Scores and Trump -->
+		<header class="flex-shrink-0 flex justify-between items-center p-2 rounded-lg bg-gray-900 bg-opacity-40 z-30">
+			<div class="text-left w-1/3">
+				<h2 class="text-lg font-semibold">Opponents: <span id="team2-points-display"
+						class="text-yellow-300">0</span></h2>
+				<span id="team2-round-points-live" class="text-sm text-gray-400 ml-2">(+0)</span>
+			</div>
+			<h1 class="text-xl font-bold text-center w-1/3">Trump: <span id="trump-suit-display">None</span></h1>
+			<div class="text-right w-1/3">
+				<h2 class="text-lg font-semibold">Your Team: <span id="team1-points-display"
+						class="text-yellow-300">0</span></h2>
+				<span id="team1-round-points-live" class="text-sm text-gray-400 ml-2">(+0)</span>
+			</div>
+		</header>
+
+		<!-- Main Game Area -->
+		<main class="relative flex-grow">
+			<div class="w-full h-full absolute">
+				<div id="player3-hand" class="absolute top-4 left-1/2 -translate-x-1/2 h-28 w-1/2 z-20"></div>
+				<div id="player2-hand" class="absolute left-4 top-20 w-28 h-28 sm:h-1/2 z-20"></div>
+				<div id="player4-hand" class="absolute right-4 top-20 w-28 h-28 sm:h-1/2 z-20"></div>
+				<div id="player1-hand" class="absolute bottom-4 left-1/2 -translate-x-1/2 h-28 w-[90%] sm:w-1/2 z-20">
+				</div>
+			</div>
+
+			<div id="play-area" class="absolute inset-0 flex items-center justify-center z-10">
+				<div
+					class="w-72 h-72 sm:w-80 sm:h-80 bg-green-800 bg-opacity-50 rounded-full border-4 border-yellow-900 shadow-inner grid grid-cols-3 grid-rows-3 relative">
+					<div id="widow-hand" class="absolute inset-0 flex items-center justify-center"></div>
+					<div id="player3-trick-area" class="col-start-2 row-start-1 flex justify-center items-end"></div>
+					<div id="player2-trick-area" class="col-start-1 row-start-2 flex justify-end items-center"></div>
+					<div id="player4-trick-area" class="col-start-3 row-start-2 flex justify-start items-center"></div>
+					<div id="player1-trick-area" class="col-start-2 row-start-3 flex justify-center items-start"></div>
+				</div>
+			</div>
+
+			<div id="player1-bid-display"
+				class="hidden absolute bottom-40 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30">
+			</div>
+			<div id="player1-status-display"
+				class="hidden absolute bottom-40 left-1/2 -translate-x-1/2 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 flex items-center gap-2">
+			</div>
+			<div id="player1-action-display"
+				class="hidden absolute bottom-48 left-1/2 -translate-x-1/2 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30">
+			</div>
+			<div id="player2-bid-display"
+				class="hidden absolute top-40 left-12 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30 sm:left-36 sm:top-1/2 sm:-translate-y-1/2">
+			</div>
+			<div id="player2-status-display"
+				class="hidden absolute top-40 left-12 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:left-36 sm:top-1/2 sm:-translate-y-1/2 flex items-center gap-2">
+			</div>
+			<div id="player2-action-display"
+				class="hidden absolute top-48 left-12 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:left-36 sm:top-1/2 sm:translate-y-8">
+			</div>
+			<div id="player3-bid-display"
+				class="hidden absolute top-40 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30">
+			</div>
+			<div id="player3-status-display"
+				class="hidden absolute top-40 left-1/2 -translate-x-1/2 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 flex items-center gap-2">
+			</div>
+			<div id="player3-action-display"
+				class="hidden absolute top-48 left-1/2 -translate-x-1/2 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30">
+			</div>
+			<div id="player4-bid-display"
+				class="hidden absolute top-40 right-12 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30 sm:right-36 sm:top-1/2 sm:-translate-y-1/2">
+			</div>
+			<div id="player4-status-display"
+				class="hidden absolute top-40 right-12 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:right-36 sm:top-1/2 sm:-translate-y-1/2 flex items-center gap-2">
+			</div>
+			<div id="player4-action-display"
+				class="hidden absolute top-48 right-12 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:right-36 sm:top-1/2 sm:translate-y-8">
+			</div>
+		</main>
+
+		<!-- Action Area -->
+		<footer class="flex-shrink-0 h-32 flex flex-col items-center justify-center z-30 relative pt-2"> <!-- CHANGED -->
+			<div id="message-box"
+				class="hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 rounded-lg shadow-lg w-max max-w-sm text-center bg-gray-900 bg-opacity-80">
+				<p id="message-text" class="text-center"></p>
+			</div>
+			<div class="flex-grow flex items-center justify-center"> <!-- CHANGED -->
+				<div id="bid-buttons-container" class="flex justify-center items-center gap-2 sm:gap-4 hidden"></div>
+				<div id="trump-selection-container" class="flex justify-center items-center gap-2 sm:gap-4 hidden"></div>
+				<div id="discard-button-container" class="hidden">
+					<button id="discard-button"
+						class="py-3 px-8 bg-purple-600 text-white font-bold rounded-lg shadow-lg text-lg hover:bg-purple-700">Discard
+						Selected</button>
+				</div>
+			</div>
+			<div class="w-full px-4 pb-1 flex justify-between items-center"> <!-- CHANGED -->
+				<button id="full-reset-button" class="text-xs py-1 px-2 bg-red-800 rounded">Reset All</button>
+				<button id="rules-button" class="text-sm py-1 px-3 bg-gray-700 rounded-lg hover:bg-gray-600">Game
+					Rules</button>
+			</div>
+		</footer>
+	</div>
+
+	<!-- UI Overlays -->
+	<div id="rules-overlay"
+		class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
+		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-3xl max-h-[90%] overflow-y-auto text-gray-300">
+			<h2 class="text-2xl font-bold text-center mb-4 text-yellow-300">Pitch: Game Rules</h2>
+
+			<div class="rules-section">
+				<h3 class="text-lg font-semibold text-white mb-2">Objective</h3>
+				<p>Be the first team to reach <strong>21 points</strong>. You are partnered with the player across from
+					you. Points are scored by winning "tricks" and capturing valuable cards.</p>
+			</div>
+
+			<div class="rules-section">
+				<h3 class="text-lg font-semibold text-white mb-2">The Flow of a Round</h3>
+				<ol class="list-decimal list-inside space-y-2">
+					<li><strong>Dealing & Widow:</strong> Each player is dealt 7 cards. A 7-card "widow" is set aside,
+						with the last card face-up.</li>
+					<li><strong>Bidding:</strong> Each player gets a chance to bid on how many points they think their
+						team can score. The minimum bid is 4. The highest bidder wins the contract.</li>
+					<li><strong>Taking the Widow:</strong> The high bidder takes the 7 widow cards into their hand.</li>
+					<li><strong>Choosing Trump:</strong> After seeing their combined 14 cards, the bidder chooses the
+						trump suit.</li>
+					<li><strong>Discarding:</strong> All players discard cards to get down to a hand of 6 or fewer
+						cards, then draw back up to 6. The bidder (with 14 cards) must discard at least 8. Other players
+						(with 7 cards) must discard at least 1.</li>
+					<li><strong>Playing Tricks:</strong> The high bidder leads the first trick. The winner of each trick
+						leads the next until all 6 tricks are played.</li>
+					<li><strong>Scoring:</strong> Teams count the points they earned during the round.</li>
+				</ol>
+			</div>
+
+			<div class="rules-section">
+				<h3 class="text-lg font-semibold text-white mb-2">Card Ranks & Trump</h3>
+				<p class="mb-2">Any card from the trump suit beats any card from a non-trump suit. The Jokers and
+					specific Jacks are always considered part of the trump suit.</p>
+				<p><strong>Trump Rank (Highest to Lowest):</strong></p>
+				<ol class="list-decimal list-inside font-mono text-sm">
+					<li>Ace, King, Queen of the trump suit</li>
+					<li>Jack of the trump suit</li>
+					<li>Jack of the same color as trump</li>
+					<li>High Joker (Red), Low Joker (Black)</li>
+					<li>10, 9, 8, 7, 6, 5, 4, 3, 2 of the trump suit</li>
+				</ol>
+				<p class="mt-2"><strong>Non-Trump Suit Rank:</strong> Ace (high), King, Queen, Jack, 10, 9... 2 (low).
+				</p>
+			</div>
+
+			<div class="rules-section">
+				<h3 class="text-lg font-semibold text-white mb-2">Playing a Trick</h3>
+				<ul class="list-disc list-inside space-y-1">
+					<li>The player who leads a trick can play any card.</li>
+					<li>Other players must <strong>follow suit</strong> if they can. (e.g., if a Spade is led, you must
+						play a Spade if you have one).</li>
+					<li>If you cannot follow suit, you can play any card, including a trump card ("trumping" the trick).
+					</li>
+					<li>The trick is won by the person who played the highest-ranking trump card. If no trump was
+						played, it's won by the highest card of the suit that was led.</li>
+				</ul>
+			</div>
+
+			<div class="rules-section">
+				<h3 class="text-lg font-semibold text-white mb-2">Scoring Points</h3>
+				<p>At the end of the round, up to 7 points are awarded. A team gets a point for each of the following
+					they have captured in their tricks:</p>
+				<ul class="list-disc list-inside space-y-1">
+					<li><strong>High:</strong> Capturing the highest trump card played in the round.</li>
+					<li><strong>Low:</strong> Awarded to the team that was dealt the lowest trump card. (You get this
+						point even if your opponent captures the card).</li>
+					<li><strong>Jack:</strong> Capturing the Jack of the trump suit.</li>
+					<li><strong>Off-Jack:</strong> Capturing the Jack of the same color as trump.</li>
+					<li><strong>Joker:</strong> One point for each Joker captured.</li>
+					<li><strong>Game:</strong> The team with the highest total of "card points" from their captured
+						tricks gets one point. (Card Points: 10=10, Ace=4, King=3, Queen=2, Jack=1).</li>
+				</ul>
+				<p class="font-bold text-red-400 mt-2"><strong>Making the Bid:</strong> If the bidding team scores at
+					least as many points as their bid, they get all the points they earned. If they fail, their bid
+					amount is <strong>subtracted</strong> from their total score.</p>
+			</div>
+
+			<button id="close-rules-button" class="mt-6 mx-auto block py-2 px-6 bg-blue-600 rounded-lg">Close</button>
+		</div>
+	</div>
+
+	<div id="round-summary-overlay"
+		class="hidden fixed inset-0 bg-black bg-opacity-80 z-40 flex flex-col items-center justify-center p-4">
+		<div class="text-center p-4 bg-gray-900 bg-opacity-80 rounded-lg w-full max-w-2xl">
+			<h3 class="text-lg font-bold mb-1 text-gray-300">Round Over</h3>
+			<div class="grid grid-cols-2 gap-2">
+				<div class="bg-gray-800 bg-opacity-50 p-2 rounded-lg">
+					<h4 class="font-bold text-lg text-gray-300">Your Team</h4>
+					<p>Round: <span id="team1-round-points-display" class="text-green-400">0</span></p>
+					<p class="text-xs">Card Points: <span id="team1-card-value-display">0</span></p>
+					<div id="team1-point-cards" class="min-h-[5rem] flex flex-wrap justify-center items-center gap-1">
+					</div>
+				</div>
+				<div class="bg-gray-800 bg-opacity-50 p-2 rounded-lg">
+					<h4 class="font-bold text-lg text-gray-300">Opponents</h4>
+					<p>Round: <span id="team2-round-points-display" class="text-red-400">0</span></p>
+					<p class="text-xs">Card Points: <span id="team2-card-value-display">0</span></p>
+					<div id="team2-point-cards" class="min-h-[5rem] flex flex-wrap justify-center items-center gap-1">
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="mt-4 text-center">
+			<h4 class="text-sm font-semibold text-gray-300 mb-2">Remaining Cards in Deck</h4>
+			<div id="remaining-deck-display" class="relative h-24 flex justify-center items-center">
+			</div>
+		</div>
+		<button id="next-round-button" class="py-2 px-6 bg-blue-600 rounded-lg shadow-lg mt-4">Next Round</button>
+	</div>
+
+	<div id="trick-winner-popup"
+		class="hidden opacity-0 scale-0 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-70 text-white text-2xl font-bold p-6 rounded-lg z-50">
+	</div>
+
+	<div id="game-over-overlay"
+		class="hidden fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center p-4 text-white">
+		<div class="text-center">
+			<h2 id="game-over-title" class="text-5xl font-bold mb-4 text-yellow-300">🎉 You Win! 🎉</h2>
+			<p class="text-xl mb-6">Final Score</p>
+			<div class="text-2xl font-semibold flex justify-center gap-8">
+				<div>
+					<p>Your Team</p>
+					<p id="final-score-team1" class="text-green-400 text-4xl">21</p>
+				</div>
+				<div>
+					<p>Opponents</p>
+					<p id="final-score-team2" class="text-red-400 text-4xl">15</p>
+				</div>
+			</div>
+		</div>
+		<button id="play-again-button"
+			class="mt-8 py-3 px-8 bg-blue-600 rounded-lg shadow-lg text-lg font-bold hover:bg-blue-700">Play
+			Again</button>
+	</div>
+
+	<!-- Points Drawers -->
+	<div id="team1-drawer"
+		class="fixed top-1/2 -translate-y-1/2 left-0 w-20 bg-gray-900 bg-opacity-80 rounded-r-lg shadow-lg z-40 transform -translate-x-full transition-transform duration-300 ease-in-out">
+		<button id="team1-drawer-tab"
+			class="absolute top-1/2 -translate-y-1/2 left-full w-8 h-24 bg-blue-800 hover:bg-blue-700 rounded-r-lg flex items-center justify-center">
+			<span class="text-xl transform rotate-90">Points</span>
+		</button>
+		<div class="p-2 drawer-content-area overflow-y-auto"> <!-- CHANGED -->
+			<div id="team1-drawer-content" class="flex flex-col items-center gap-2"></div>
+		</div>
+	</div>
+
+	<div id="team2-drawer"
+		class="fixed top-1/2 -translate-y-1/2 right-0 w-20 bg-gray-900 bg-opacity-80 rounded-l-lg shadow-lg z-40 transform translate-x-full transition-transform duration-300 ease-in-out">
+		<button id="team2-drawer-tab"
+			class="absolute top-1/2 -translate-y-1/2 right-full w-8 h-24 bg-red-800 hover:bg-red-700 rounded-l-lg flex items-center justify-center">
+			<span class="text-xl transform -rotate-90">Points</span>
+		</button>
+		<div class="p-2 drawer-content-area overflow-y-auto"> <!-- CHANGED -->
+			<div id="team2-drawer-content" class="flex flex-col items-center gap-2"></div>
+		</div>
+	</div>
+
+    <script src="../src/firebase.js" type="module"></script>
+    <script src="../src/game.js" type="module"></script>
+    <script src="../src/ui.js" type="module"></script>
+    <script src="../src/main.js" type="module"></script>
+
+</body>
+
+</html>
