@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": "pitch-mobile/public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}
