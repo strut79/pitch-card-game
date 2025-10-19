@@ -1,4 +1,4 @@
-import { cardSymbols, suits } from "./game.js";
+import { cardSymbols, suits, WINNING_SCORE } from "./game.js";
 
 let playerHandElements = [];
 let playerInfoElements = [];
@@ -112,9 +112,15 @@ export const initUI = (
   document
     .getElementById("rules-button")
     .addEventListener("click", () => rulesOverlay.classList.remove("hidden"));
-  document
-    .getElementById("close-rules-button")
-    .addEventListener("click", () => rulesOverlay.classList.add("hidden"));
+
+  if (rulesOverlay) {
+    rulesOverlay.addEventListener("click", (event) => {
+      if (event.target.id === "close-rules-button") {
+        rulesOverlay.classList.add("hidden");
+      }
+    });
+  }
+
   nextRoundButton.addEventListener("click", startNewRound);
   playAgainButton.addEventListener("click", startGame);
 
@@ -168,13 +174,13 @@ export const initUI = (
       cardEl.classList.add("bg-green-200", "text-green-800");
       let gameHTML = `
                 <div class="text-center">
-                    <div class="text-3xl">醇</div>
+                    <div class="text-3xl">🎯</div>
                     <div class="font-bold text-xs">GAME</div>
                 </div>`;
       if (options.count) {
         gameHTML = `
                 <div class="text-center w-full">
-                    <div class="text-lg">醇</div>
+                    <div class="text-lg">🎯</div>
                     <div class="font-bold text-2xl leading-none">${options.count}</div>
                     <div class="font-bold text-xs">GAME</div>
                 </div>`;
@@ -194,7 +200,7 @@ export const initUI = (
       let posClassBottom;
 
       if (card.value === "Joker") {
-        symbol = "ワ";
+        symbol = "🃏";
         valueDisplay = isSummary ? "JKR" : "Joker";
         rankClass = isSummary ? "text-xs" : "text-lg";
         symbolClass = isSummary ? "text-3xl" : "text-4xl";
@@ -407,8 +413,17 @@ export const renderWidow = (gameData, createCardElement) => {
   });
 };
 
-export const renderPlayerBids = (gameData) => {
-  gameData.players.forEach((player, index) => {
+export const renderPlayerBids = (gameData, currentUser) => {
+  const playerIndex = gameData.players.findIndex(
+    (p) => p.id === currentUser.uid
+  );
+  if (playerIndex === -1) return;
+  const reorderedPlayers = [
+    ...gameData.players.slice(playerIndex),
+    ...gameData.players.slice(0, playerIndex),
+  ];
+
+  reorderedPlayers.forEach((player, index) => {
     const bidEl = playerBidDisplayElements[index];
     if (!bidEl) return;
 
@@ -421,10 +436,27 @@ export const renderPlayerBids = (gameData) => {
   });
 };
 
-export const renderPlayerStatus = (gameData) => {
+export const renderPlayerStatus = (gameData, currentUser) => {
+  const playerIndex = gameData.players.findIndex(
+    (p) => p.id === currentUser.uid
+  );
+  if (playerIndex === -1) return;
+  const reorderedPlayers = [
+    ...gameData.players.slice(playerIndex),
+    ...gameData.players.slice(0, playerIndex),
+  ];
+
   if (gameData.phase === "discarding" || gameData.phase === "playing") {
     playerStatusDisplayElements.forEach((el, index) => {
-      if (index === gameData.highBidderIndex) {
+      const reorderedPlayer = reorderedPlayers[index];
+      const originalPlayer = gameData.players.find(
+        (p) => p.id === reorderedPlayer.id
+      );
+      if (
+        originalPlayer &&
+        gameData.players[gameData.highBidderIndex] &&
+        originalPlayer.id === gameData.players[gameData.highBidderIndex].id
+      ) {
         el.innerHTML = `Bid: ${gameData.highBid} <span class="text-xl">${
           cardSymbols[gameData.trumpSuit] || ""
         }</span>`;
@@ -438,17 +470,32 @@ export const renderPlayerStatus = (gameData) => {
   }
 };
 
-export const renderTrick = (gameData, createCardElement) => {
+export const renderTrick = (gameData, createCardElement, currentUser) => {
   trickAreaElements.forEach((el) => {
     if (el) el.innerHTML = "";
   });
   if (!gameData.currentTrick) return;
+
+  const playerIndex = gameData.players.findIndex(
+    (p) => p.id === currentUser.uid
+  );
+  if (playerIndex === -1) return;
+  const reorderedPlayers = [
+    ...gameData.players.slice(playerIndex),
+    ...gameData.players.slice(0, playerIndex),
+  ];
+
   gameData.currentTrick.forEach((playedCard) => {
-    const playerIndex = gameData.players.findIndex(
+    const reorderedPlayerIndex = reorderedPlayers.findIndex(
       (p) => p.id === playedCard.player
     );
-    if (playerIndex !== -1 && trickAreaElements[playerIndex]) {
-      trickAreaElements[playerIndex].appendChild(createCardElement(playedCard));
+    if (
+      reorderedPlayerIndex !== -1 &&
+      trickAreaElements[reorderedPlayerIndex]
+    ) {
+      trickAreaElements[reorderedPlayerIndex].appendChild(
+        createCardElement(playedCard)
+      );
     }
   });
 };
@@ -498,69 +545,74 @@ export const displayTrickWinner = (winnerName) => {
   }, 1500);
 };
 
-export const displayRoundResults = (results, gameData, createCardElement) => {
-  team1RoundPointsDisplay.textContent = results.team1.total;
-  team2RoundPointsDisplay.textContent = results.team2.total;
-  team1CardValueDisplay.textContent = results.team1.cardValue;
-  team2CardValueDisplay.textContent = results.team2.cardValue;
+export const displayRoundResults = (
+  results,
+  gameData,
+  createCardElement,
+  currentUser
+) => {
+  if (!currentUser) return;
+  const playerTeam = gameData.teams.find((t) =>
+    t.players.includes(currentUser.uid)
+  );
+  const opponentTeam = gameData.teams.find(
+    (t) => !t.players.includes(currentUser.uid)
+  );
+
+  if (!playerTeam || !opponentTeam) return;
+
+  const playerResults =
+    playerTeam.id === gameData.teams[0].id ? results.team1 : results.team2;
+  const opponentResults =
+    opponentTeam.id === gameData.teams[0].id ? results.team1 : results.team2;
+
+  team1RoundPointsDisplay.textContent = playerResults.total;
+  team2RoundPointsDisplay.textContent = opponentResults.total;
+  team1CardValueDisplay.textContent = playerResults.cardValue;
+  team2CardValueDisplay.textContent = opponentResults.cardValue;
+
   team1PointCardsEl.innerHTML = "";
-  results.team1.pointCards.forEach((card) => {
-    if (card.value === "Game" && !card.isPoint) return;
+  playerResults.pointCards.forEach((card) => {
     team1PointCardsEl.appendChild(createCardElement(card, { isSummary: true }));
   });
+
   team2PointCardsEl.innerHTML = "";
-  results.team2.pointCards.forEach((card) => {
-    if (card.value === "Game" && !card.isPoint) return;
+  opponentResults.pointCards.forEach((card) => {
     team2PointCardsEl.appendChild(createCardElement(card, { isSummary: true }));
   });
-
-  if (remainingDeckDisplay) {
-    remainingDeckDisplay.innerHTML = "";
-    const deck = gameData.deck || [];
-    const cardCount = deck.length;
-
-    const maxSpread = 400;
-    const cardWidth = 48;
-    let overlap = (maxSpread - cardWidth) / (cardCount - 1);
-    if (cardCount === 1) overlap = 0;
-    if (overlap > cardWidth - 8) overlap = cardWidth - 8;
-
-    const totalWidth = (cardCount - 1) * overlap + cardWidth;
-    const startOffset = -totalWidth / 2;
-
-    deck.forEach((card, index) => {
-      const cardEl = createCardElement(card, { isSummary: true });
-      cardEl.style.position = "absolute";
-      cardEl.style.left = `calc(50% + ${startOffset + index * overlap}px)`;
-      cardEl.style.zIndex = index;
-
-      remainingDeckDisplay.appendChild(cardEl);
-    });
-  }
 
   roundSummaryOverlay.classList.remove("hidden");
 };
 
-export const updatePointDrawers = (gameData, createCardElement) => {
-  if (!team1DrawerContent || !team2DrawerContent) return;
+export const updatePointDrawers = (
+  gameData,
+  createCardElement,
+  currentUser
+) => {
+  if (!team1DrawerContent || !team2DrawerContent || !currentUser) return;
+
+  const playerTeam = gameData.teams.find((t) =>
+    t.players.includes(currentUser.uid)
+  );
+  const opponentTeam = gameData.teams.find(
+    (t) => !t.players.includes(currentUser.uid)
+  );
+
+  if (!playerTeam || !opponentTeam) return;
 
   team1DrawerContent.innerHTML = "";
-  gameData.teams[0].pointCards
-    .filter((c) => c.value !== "Game")
-    .forEach((card) => {
-      team1DrawerContent.appendChild(
-        createCardElement(card, { isSummary: true, count: card.count })
-      );
-    });
+  playerTeam.pointCards.forEach((card) => {
+    team1DrawerContent.appendChild(
+      createCardElement(card, { isSummary: true })
+    );
+  });
 
   team2DrawerContent.innerHTML = "";
-  gameData.teams[1].pointCards
-    .filter((c) => c.value !== "Game")
-    .forEach((card) => {
-      team2DrawerContent.appendChild(
-        createCardElement(card, { isSummary: true, count: card.count })
-      );
-    });
+  opponentTeam.pointCards.forEach((card) => {
+    team2DrawerContent.appendChild(
+      createCardElement(card, { isSummary: true })
+    );
+  });
 };
 
 export const updateUI = (
@@ -571,39 +623,78 @@ export const updateUI = (
   handleBid,
   currentUser
 ) => {
-  if (!gameData || !gameData.players) return;
+  if (
+    !gameData ||
+    !gameData.players ||
+    !gameData.players.length ||
+    !currentUser
+  )
+    return;
 
   const playerIndex = gameData.players.findIndex(
     (p) => p.id === currentUser.uid
   );
+  if (playerIndex === -1) return;
+
   const reorderedPlayers = [
     ...gameData.players.slice(playerIndex),
     ...gameData.players.slice(0, playerIndex),
   ];
+  const orientations = ["bottom", "left", "top", "right"];
 
   renderWidow(gameData, createCardElement);
-  reorderedPlayers.forEach((p, i) => {
-    renderHand(
-      p,
-      playerHandElements[i],
-      selectedDiscards,
-      handleCardClick,
-      createCardElement,
-      p.id === currentUser.uid
-    );
-    if (playerInfoElements[i]) {
-      playerInfoElements[i].textContent = `Player ${i + 1}: ${p.name}`;
-    }
-  });
-  renderTrick(gameData, createCardElement);
-  renderPlayerBids(gameData);
-  renderPlayerStatus(gameData);
-  team1PointsDisplay.textContent = gameData.teams[0].score;
-  team2PointsDisplay.textContent = gameData.teams[1].score;
-  team1RoundPointsLive.textContent = `(+${gameData.teams[0].roundPoints})`;
-  team2RoundPointsLive.textContent = `(+${gameData.teams[1].roundPoints})`;
+
+  setTimeout(() => {
+    reorderedPlayers.forEach((p, i) => {
+      p.orientation = orientations[i];
+      renderHand(
+        p,
+        playerHandElements[i],
+        selectedDiscards,
+        handleCardClick,
+        createCardElement,
+        p.id === currentUser.uid
+      );
+      if (playerInfoElements[i]) {
+        playerInfoElements[i].textContent = p.name;
+      }
+    });
+  }, 0);
+
+  renderTrick(gameData, createCardElement, currentUser);
+  renderPlayerBids(gameData, currentUser);
+  renderPlayerStatus(gameData, currentUser);
+
+  const playerTeam = gameData.teams.find((t) =>
+    t.players.includes(currentUser.uid)
+  );
+  const opponentTeam = gameData.teams.find(
+    (t) => t.players.length > 0 && !t.players.includes(currentUser.uid)
+  );
+
+  if (playerTeam && opponentTeam) {
+    team1PointsDisplay.textContent = playerTeam.score;
+    team2PointsDisplay.textContent = opponentTeam.score;
+    team1RoundPointsLive.textContent = `(+${playerTeam.roundPoints || 0})`;
+    team2RoundPointsLive.textContent = `(+${opponentTeam.roundPoints || 0})`;
+  } else if (gameData.teams) {
+    team1PointsDisplay.textContent = gameData.teams[0].score;
+    team2PointsDisplay.textContent = gameData.teams[1].score;
+    team1RoundPointsLive.textContent = `(+${
+      gameData.teams[0].roundPoints || 0
+    })`;
+    team2RoundPointsLive.textContent = `(+${
+      gameData.teams[1].roundPoints || 0
+    })`;
+  }
+
   const currentPlayer = gameData.players[gameData.turnIndex];
   const isPlayerTurn = currentPlayer && currentPlayer.id === currentUser.uid;
+  const isDiscarding =
+    gameData.phase === "discarding" &&
+    currentPlayer &&
+    currentPlayer.id === currentUser.uid;
+
   bidButtonsContainer.classList.toggle(
     "hidden",
     gameData.phase !== "bidding" || !isPlayerTurn
@@ -612,37 +703,44 @@ export const updateUI = (
     "hidden",
     gameData.phase !== "trumpSelection" || !isPlayerTurn
   );
-  discardButtonContainer.classList.toggle(
-    "hidden",
-    gameData.phase !== "discarding" || !isPlayerTurn
-  );
+  discardButtonContainer.classList.toggle("hidden", !isDiscarding);
 
   if (gameData.phase === "bidding" && isPlayerTurn) {
     renderBidButtons(gameData.highBid, handleBid);
   }
 };
 
-export const showGameOver = (gameData) => {
+export const showGameOver = (gameData, currentUser) => {
   hideMessage();
   roundSummaryOverlay.classList.add("hidden");
 
-  const team1Won = gameData.teams[0].score >= WINNING_SCORE;
-  const team2Won = gameData.teams[1].score >= WINNING_SCORE;
+  const playerTeam = gameData.teams.find((t) =>
+    t.players.includes(currentUser.uid)
+  );
+  const opponentTeam = gameData.teams.find(
+    (t) => !t.players.includes(currentUser.uid)
+  );
+
+  if (!playerTeam || !opponentTeam) {
+    document.getElementById("game-over-title").textContent = "Game Over!";
+    return;
+  }
+
+  const playerTeamWon = playerTeam.score >= WINNING_SCORE;
+  const opponentTeamWon = opponentTeam.score >= WINNING_SCORE;
 
   let winnerMessage = "Game Over!";
-  if (team1Won && !team2Won) {
-    winnerMessage = "脂 You Win! 脂";
-  } else if (team2Won && !team1Won) {
+  if (playerTeamWon && !opponentTeamWon) {
+    winnerMessage = "🎉 You Win! 🎉";
+  } else if (opponentTeamWon && !playerTeamWon) {
     winnerMessage = "Opponents Win.";
   } else {
     winnerMessage = "It's a Tie!";
   }
 
   document.getElementById("game-over-title").textContent = winnerMessage;
-  document.getElementById("final-score-team1").textContent =
-    gameData.teams[0].score;
-  document.getElementById("final-score-team2").textContent =
-    gameData.teams[1].score;
+  document.getElementById("final-score-team1").textContent = playerTeam.score;
+  document.getElementById("final-score-team2").textContent = opponentTeam.score;
 
   gameOverOverlay.classList.remove("hidden");
 };
@@ -674,4 +772,8 @@ export const hideGame = () => {
 export const showGame = () => {
   const gameContainer = document.getElementById("game-container");
   if (gameContainer) gameContainer.classList.remove("hidden");
+};
+
+export const hideRoundSummary = () => {
+  if (roundSummaryOverlay) roundSummaryOverlay.classList.add("hidden");
 };

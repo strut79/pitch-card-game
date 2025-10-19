@@ -15,12 +15,14 @@ import {
   PLAYER_COUNT,
   CARDS_DEALT,
   FINAL_HAND_SIZE,
+  WIDOW_SIZE,
   WINNING_SCORE,
   suits,
   cardSymbols,
   isTrumpCard,
   isProtectedCard,
   getEffectiveSuit,
+  getSuitColor,
   getCardRank,
   getCardPointValue,
   createDeck,
@@ -49,8 +51,9 @@ import {
   hideAuthContainer,
   showLobby,
   hideLobby,
-  hideGame,
   showGame,
+  hideGame,
+  hideRoundSummary,
 } from "./ui.js";
 import { initLobby } from "./lobby.js";
 
@@ -69,7 +72,6 @@ onAuthStateChanged(auth, (user) => {
     console.log("User is logged in:", user);
     currentUser = user;
     hideAuthContainer();
-    // After login, check if there is a game ID in the URL
     const urlParams = new URLSearchParams(window.location.search);
     const urlGameId = urlParams.get("game");
     console.log("urlGameId:", urlGameId);
@@ -77,8 +79,10 @@ onAuthStateChanged(auth, (user) => {
       console.log("Joining game...");
       joinGame(urlGameId);
     } else {
-      console.log("Starting a new game...");
-      runGame();
+      console.log("No game in URL, showing lobby to create one.");
+      showLobby();
+      hideGame();
+      initLobby(null, currentUser, createAndStartGame);
     }
   } else {
     console.log("User is not logged in.");
@@ -107,15 +111,13 @@ const handleAnonymousLogin = async () => {
 };
 
 // --- Game Logic: Core ---
-const startGame = async () => {
-  console.log("Creating a new game...");
-  gameData = createNewGame(currentUser);
-  console.log("Game data created:", gameData);
-  gameId = await createGame(gameData);
+const createAndStartGame = async (lobbyGameData) => {
+  console.log("Creating a new game from lobby data...");
+  gameId = await createGame(lobbyGameData);
   console.log("Game created with ID:", gameId);
-  // Add gameId to the URL so other players can join
   window.history.pushState(null, null, `?game=${gameId}`);
   console.log("URL updated.");
+
   onGameUpdate(gameId, (newGameData) => {
     handleStateChanges(newGameData);
   });
@@ -127,28 +129,39 @@ const joinGame = async (id) => {
     handleBid,
     handleTrumpSelection,
     handleDiscard,
-    startGame,
+    createAndStartGame,
     startNewRound,
     currentUser
   );
   gameId = id;
 
-  // Get the current game data
   const gameRef = doc(db, "games", gameId);
   const gameSnap = await getDoc(gameRef);
-  const gameData = gameSnap.data();
 
-  // Add the new player if they are not already in the game
-  if (gameData && !gameData.players.some((p) => p.id === currentUser.uid)) {
+  if (!gameSnap.exists()) {
+    console.error("Game not found!");
+    window.history.replaceState(null, null, window.location.pathname);
+    showLobby();
+    hideGame();
+    initLobby(null, currentUser, createAndStartGame);
+    return;
+  }
+  const existingGameData = gameSnap.data();
+
+  const playerExists = existingGameData.players.some(
+    (p) => p.id === currentUser.uid
+  );
+  if (!playerExists && existingGameData.phase === "lobby") {
     const newPlayer = {
       id: currentUser.uid,
       name:
-        currentUser.displayName || "Player " + (gameData.players.length + 1),
+        currentUser.displayName ||
+        "Player " + (existingGameData.players.length + 1),
       isOnline: true,
       team: null,
     };
-    gameData.players.push(newPlayer);
-    await updateGame(gameId, { players: gameData.players });
+    existingGameData.players.push(newPlayer);
+    await updateGame(gameId, { players: existingGameData.players });
   }
 
   onGameUpdate(gameId, (newGameData) => {
@@ -157,6 +170,9 @@ const joinGame = async (id) => {
 };
 
 const startNewRound = () => {
+  if (gameData.hostId !== currentUser.uid) return;
+  hideRoundSummary();
+
   const newDealerIndex = (gameData.dealerIndex + 1) % PLAYER_COUNT;
   const deck = createDeck();
 
@@ -182,6 +198,7 @@ const startNewRound = () => {
   gameData.teams.forEach((team) => {
     team.roundPoints = 0;
     team.cardsWon = [];
+    team.pointCards = [];
   });
 
   gameData.phase = "bidding";
@@ -242,8 +259,25 @@ const checkTrickWinner = () => {
 
   const winnerTeam = gameData.teams.find((t) => t.players.includes(winner.id));
 
+  if (winnerTeam) {
+    trick.forEach((card) => {
+      const isPointCard =
+        card.value === "Joker" ||
+        (card.value === "Jack" && isTrumpCard(card, trumpSuit));
+
+      if (
+        isPointCard &&
+        !winnerTeam.pointCards.some((pc) => pc.id === card.id)
+      ) {
+        winnerTeam.pointCards.push(card);
+      }
+    });
+  }
+
   setTimeout(() => {
-    winnerTeam.cardsWon.push(...trick);
+    if (winnerTeam) {
+      winnerTeam.cardsWon.push(...trick);
+    }
 
     gameData.currentTrick = [];
     gameData.turnIndex = winningPlayerIndex;
@@ -258,26 +292,27 @@ const checkTrickWinner = () => {
 
 const calculateTeamPoints = () => {
   const { trumpSuit, teams, highBid, players, highBidderIndex } = gameData;
-  const team1 = teams[0];
-  const team2 = teams[1];
   const bidder = players[highBidderIndex];
   const biddingTeam = teams.find((t) => t.players.includes(bidder.id));
+  const otherTeam = teams.find((t) => !t.players.includes(bidder.id));
 
-  const scores = { [team1.id]: 0, [team2.id]: 0 };
-  const cardValueTotals = { [team1.id]: 0, [team2.id]: 0 };
+  teams.forEach((t) => {
+    t.roundPoints = 0;
+    t.pointCards = [];
+  });
 
-  team1.cardsWon.forEach(
-    (card) => (cardValueTotals[team1.id] += getCardPointValue(card))
+  const cardValueTotals = { [biddingTeam.id]: 0, [otherTeam.id]: 0 };
+  biddingTeam.cardsWon.forEach(
+    (card) => (cardValueTotals[biddingTeam.id] += getCardPointValue(card))
   );
-  team2.cardsWon.forEach(
-    (card) => (cardValueTotals[team2.id] += getCardPointValue(card))
+  otherTeam.cardsWon.forEach(
+    (card) => (cardValueTotals[otherTeam.id] += getCardPointValue(card))
   );
 
   const allCardsInPlay = [
     ...players.flatMap((p) => p.originalHand),
     ...gameData.widow,
   ];
-
   const allTrumpsInPlay = allCardsInPlay.filter((c) =>
     isTrumpCard(c, trumpSuit)
   );
@@ -291,61 +326,78 @@ const calculateTeamPoints = () => {
     lowTrump = sortedTrumps[0];
   }
 
-  const pointCards = [];
-  if (highTrump) pointCards.push(highTrump);
-  if (lowTrump) pointCards.push(lowTrump);
+  const pointCardDefinitions = [
+    { name: "High", card: highTrump },
+    { name: "Low", card: lowTrump },
+    {
+      name: "Jack",
+      card: allCardsInPlay.find(
+        (c) => c.value === "Jack" && c.suit === trumpSuit
+      ),
+    },
+    {
+      name: "Off-Jack",
+      card: allCardsInPlay.find(
+        (c) =>
+          c.value === "Jack" &&
+          getSuitColor(c.suit) === getSuitColor(trumpSuit) &&
+          c.suit !== trumpSuit
+      ),
+    },
+    ...allCardsInPlay
+      .filter((c) => c.value === "Joker")
+      .map((joker) => ({ name: "Joker", card: joker })),
+  ];
 
-  const jackOfTrump = players
-    .flatMap((p) => p.originalHand)
-    .find((c) => c.value === "Jack" && c.suit === trumpSuit);
-  if (jackOfTrump) pointCards.push(jackOfTrump);
+  pointCardDefinitions.forEach(({ name, card }) => {
+    if (!card) return;
+    let teamToAward;
+    if (name === "Low") {
+      teamToAward = card.originalOwner
+        ? teams.find((t) => t.players.includes(card.originalOwner))
+        : null;
+    } else {
+      const winnerOfCard = biddingTeam.cardsWon.some((c) => c.id === card.id)
+        ? biddingTeam
+        : otherTeam.cardsWon.some((c) => c.id === card.id)
+        ? otherTeam
+        : null;
+      teamToAward = winnerOfCard;
+    }
 
-  const offJack = players
-    .flatMap((p) => p.originalHand)
-    .find(
-      (c) =>
-        c.value === "Jack" &&
-        getSuitColor(c.suit) === getSuitColor(trumpSuit) &&
-        c.suit !== trumpSuit
-    );
-  if (offJack) pointCards.push(offJack);
-
-  const jokers = players
-    .flatMap((p) => p.originalHand)
-    .filter((c) => c.value === "Joker");
-  pointCards.push(...jokers);
-
-  pointCards.forEach((card) => {
-    const winningTeam = team1.cardsWon.some((c) => c.id === card.id)
-      ? team1
-      : team2.cardsWon.some((c) => c.id === card.id)
-      ? team2
-      : null;
-    if (winningTeam) {
-      scores[winningTeam.id]++;
+    if (teamToAward) {
+      teamToAward.roundPoints++;
+      const cardForDisplay = { ...card };
+      if (name === "High") cardForDisplay.isHigh = true;
+      if (name === "Low") cardForDisplay.isLow = true;
+      if (!teamToAward.pointCards.some((c) => c.id === cardForDisplay.id)) {
+        teamToAward.pointCards.push(cardForDisplay);
+      }
     }
   });
 
-  if (cardValueTotals[team1.id] > cardValueTotals[team2.id]) {
-    scores[team1.id]++;
-  } else if (cardValueTotals[team2.id] > cardValueTotals[team1.id]) {
-    scores[team2.id]++;
+  if (cardValueTotals[biddingTeam.id] > cardValueTotals[otherTeam.id]) {
+    biddingTeam.roundPoints++;
+  } else if (cardValueTotals[otherTeam.id] > cardValueTotals[biddingTeam.id]) {
+    otherTeam.roundPoints++;
   }
 
-  if (scores[biddingTeam.id] < highBid) {
-    scores[biddingTeam.id] = -highBid;
+  if (biddingTeam.roundPoints < highBid) {
+    biddingTeam.roundPoints = -highBid;
+  } else {
+    otherTeam.roundPoints = 0; // Non-bidding team gets 0 if bidder makes it
   }
 
   return {
     team1: {
-      total: scores[team1.id],
-      pointCards: team1.cardsWon,
-      cardValue: cardValueTotals[team1.id],
+      total: teams[0].roundPoints,
+      pointCards: teams[0].pointCards,
+      cardValue: cardValueTotals[teams[0].id] || 0,
     },
     team2: {
-      total: scores[team2.id],
-      pointCards: team2.cardsWon,
-      cardValue: cardValueTotals[team2.id],
+      total: teams[1].roundPoints,
+      pointCards: teams[1].pointCards,
+      cardValue: cardValueTotals[teams[1].id] || 0,
     },
   };
 };
@@ -363,23 +415,26 @@ const handleBid = (bidValue) => {
     gameData.highBidderIndex = gameData.turnIndex;
   }
   gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-  updateGame(gameId, gameData);
-  isMakingMove = false;
+  updateGame(gameId, gameData).finally(() => {
+    isMakingMove = false;
+  });
 };
 
 const handleTrumpSelection = (suit) => {
+  if (isMakingMove) return;
   isMakingMove = true;
   gameData.trumpSuit = suit;
 
   gameData.phase = "discarding";
-  gameData.turnIndex = gameData.highBidderIndex;
+  gameData.turnIndex = 0; // Start discard phase from first player
   gameData.discardsMade = 0;
-  updateGame(gameId, gameData);
-  isMakingMove = false;
+  gameData.players.forEach((p) => (p.hasDiscarded = false)); // Reset for new phase
+  updateGame(gameId, gameData).finally(() => {
+    isMakingMove = false;
+  });
 };
 
 const toggleDiscardSelection = (card) => {
-  if (isMakingMove) return;
   if (isProtectedCard(card, gameData.trumpSuit)) {
     showMessage(
       `<span class="text-red-400">Cannot discard protected cards.</span>`,
@@ -393,64 +448,70 @@ const toggleDiscardSelection = (card) => {
   } else {
     selectedDiscards.push(card);
   }
-  renderHand(
-    gameData.players.find((p) => p.id === currentUser.uid),
-    document.getElementById("player1-hand"),
+  updateUI(
+    gameData,
     selectedDiscards,
     handleCardClick,
     uiHelpers.createCardElement,
-    true
+    handleBid,
+    currentUser
   );
 };
 
 const handleDiscard = () => {
   if (isMakingMove) return;
-  isMakingMove = true;
   const player = gameData.players[gameData.turnIndex];
+  if (!player || player.id !== currentUser.uid) return;
 
-  const isBidder = gameData.turnIndex === gameData.highBidderIndex;
-  const minCardsToDiscard = isBidder
+  isMakingMove = true;
+
+  const isBidder = gameData.players[gameData.highBidderIndex].id === player.id;
+  const minDiscards = isBidder
     ? player.hand.length - FINAL_HAND_SIZE
     : CARDS_DEALT - FINAL_HAND_SIZE;
 
-  if (selectedDiscards.length < minCardsToDiscard) {
+  if (selectedDiscards.length < minDiscards) {
     showMessage(
-      `You must select at least ${minCardsToDiscard} cards to discard.`,
+      `You must select at least ${minDiscards} cards to discard.`,
       2000
     );
     isMakingMove = false;
     return;
   }
 
-  const cardsKeptCount = player.hand.length - selectedDiscards.length;
   player.hand = player.hand.filter(
     (card) => !selectedDiscards.some((d) => d.id === card.id)
   );
 
   const cardsToDraw = Math.max(0, FINAL_HAND_SIZE - player.hand.length);
-  if (cardsToDraw > 0) {
+  if (cardsToDraw > 0 && gameData.deck.length > 0) {
     const newCards = gameData.deck.splice(0, cardsToDraw);
     newCards.forEach((c) => (c.originalOwner = player.id));
     player.hand.push(...newCards);
   }
 
   selectedDiscards = [];
-
   gameData.discardsMade++;
   gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-  updateGame(gameId, gameData);
-  isMakingMove = false;
+
+  updateGame(gameId, {
+    players: gameData.players,
+    deck: gameData.deck,
+    turnIndex: gameData.turnIndex,
+    discardsMade: gameData.discardsMade,
+  }).finally(() => {
+    isMakingMove = false;
+  });
 };
 
 const handleCardPlay = (card) => {
   if (isMakingMove) return;
-  isMakingMove = true;
 
   const player = gameData.players[gameData.turnIndex];
-  if (player.id !== currentUser.uid) {
-    isMakingMove = false;
-    return;
-  }
+  if (player.id !== currentUser.uid) return;
+
+  isMakingMove = true;
+
   const leadCard =
     gameData.currentTrick.length > 0 ? gameData.currentTrick[0] : null;
   const leadSuit = leadCard
@@ -477,39 +538,295 @@ const handleCardPlay = (card) => {
     gameData.trickLeadPlayerIndex = gameData.turnIndex;
   }
   gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-  updateGame(gameId, gameData);
+  updateGame(gameId, gameData).finally(() => {
+    isMakingMove = false;
+  });
 };
 
 const handleCardClick = (card) => {
-  if (isMakingMove) return;
-  if (
-    gameData.phase === "playing" &&
-    gameData.players[gameData.turnIndex].id === currentUser.uid
-  ) {
+  if (gameData.phase === "playing") {
     handleCardPlay(card);
-  } else if (
-    gameData.phase === "discarding" &&
-    gameData.players[gameData.turnIndex].id === currentUser.uid
-  ) {
+  } else if (gameData.phase === "discarding") {
     toggleDiscardSelection(card);
   }
 };
 
+const aiAction = () => {
+  const player = gameData.players[gameData.turnIndex];
+  if (!player || !player.isAI) return;
+
+  setTimeout(() => {
+    if (gameData.phase === "bidding") {
+      const evaluateHandForSuit = (hand, trumpSuit) => {
+        let score = 0;
+        hand.forEach((card) => {
+          if (isTrumpCard(card, trumpSuit)) {
+            if (card.value === "Joker") score += 4;
+            else if (card.value === "Jack") score += 3.5;
+            else if (card.value === "Ace" || card.value === "King") score += 2;
+            else if (card.value === "2" || card.value === "3") score += 0.5;
+            else score += 1;
+          }
+        });
+        hand.forEach((card) => {
+          if (card.value === "Ace" && !isTrumpCard(card, trumpSuit)) {
+            score += 1.5;
+          }
+        });
+        return score;
+      };
+
+      let bestSuit = null;
+      let maxScore = 0;
+      suits.forEach((suit) => {
+        const score = evaluateHandForSuit(player.hand, suit);
+        if (score > maxScore) {
+          maxScore = score;
+          bestSuit = suit;
+        }
+      });
+
+      let determinedBid = "pass";
+      if (maxScore > 12) determinedBid = 6;
+      else if (maxScore > 10) determinedBid = 5;
+      else if (maxScore > 8) determinedBid = 4;
+
+      const minBid = 4;
+      const minAllowed = gameData.highBid > 0 ? gameData.highBid + 1 : minBid;
+      if (determinedBid !== "pass" && determinedBid < minAllowed) {
+        determinedBid = "pass";
+      }
+
+      handleBid(determinedBid);
+    } else if (gameData.phase === "trumpSelection") {
+      const evaluateHandForSuit = (hand, trumpSuit) => {
+        let score = 0;
+        hand.forEach((card) => {
+          if (isTrumpCard(card, trumpSuit)) {
+            if (card.value === "Joker") score += 4;
+            else if (card.value === "Jack") score += 3.5;
+            else if (card.value === "Ace" || card.value === "King") score += 2;
+            else if (card.value === "2" || card.value === "3") score += 0.5;
+            else score += 1;
+          }
+        });
+        hand.forEach((card) => {
+          if (card.value === "Ace" && !isTrumpCard(card, trumpSuit)) {
+            score += 1.5;
+          }
+        });
+        return score;
+      };
+
+      let bestSuit = "Spades";
+      let maxScore = -1;
+      suits.forEach((suit) => {
+        const score = evaluateHandForSuit(player.hand, suit);
+        if (score > maxScore) {
+          maxScore = score;
+          bestSuit = suit;
+        }
+      });
+
+      handleTrumpSelection(bestSuit);
+    } else if (gameData.phase === "discarding") {
+      const aiPlayer = player;
+      const trumpSuit = gameData.trumpSuit;
+      const isBidder =
+        gameData.players[gameData.highBidderIndex].id === aiPlayer.id;
+      const numberToDiscard = isBidder
+        ? aiPlayer.hand.length - FINAL_HAND_SIZE
+        : CARDS_DEALT - FINAL_HAND_SIZE;
+
+      const sortedHand = [...aiPlayer.hand].sort((a, b) => {
+        const aValue =
+          (isTrumpCard(a, trumpSuit) ? 100 : 0) +
+          getCardRank(a, trumpSuit) +
+          (a.value === "Ace" && !isTrumpCard(a, trumpSuit) ? 15 : 0);
+        const bValue =
+          (isTrumpCard(b, trumpSuit) ? 100 : 0) +
+          getCardRank(b, trumpSuit) +
+          (b.value === "Ace" && !isTrumpCard(b, trumpSuit) ? 15 : 0);
+        return aValue - bValue;
+      });
+
+      let toDiscard = [];
+      for (const card of sortedHand) {
+        if (
+          toDiscard.length < numberToDiscard &&
+          !isProtectedCard(card, trumpSuit)
+        ) {
+          toDiscard.push(card);
+        }
+      }
+
+      if (toDiscard.length < numberToDiscard) {
+        for (const card of sortedHand) {
+          if (
+            toDiscard.length < numberToDiscard &&
+            !toDiscard.some((c) => c.id === card.id)
+          ) {
+            toDiscard.push(card);
+          }
+        }
+      }
+
+      aiPlayer.hand = aiPlayer.hand.filter(
+        (c) => !toDiscard.some((d) => d.id === c.id)
+      );
+
+      const cardsToDraw = Math.max(0, FINAL_HAND_SIZE - aiPlayer.hand.length);
+      if (cardsToDraw > 0 && gameData.deck.length > 0) {
+        const newCards = gameData.deck.splice(0, cardsToDraw);
+        newCards.forEach((c) => (c.originalOwner = aiPlayer.id));
+        aiPlayer.hand.push(...newCards);
+      }
+
+      gameData.discardsMade++;
+      gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
+
+      updateGame(gameId, {
+        players: gameData.players,
+        deck: gameData.deck,
+        turnIndex: gameData.turnIndex,
+        discardsMade: gameData.discardsMade,
+      });
+    } else if (gameData.phase === "playing") {
+      const trumpSuit = gameData.trumpSuit;
+      const leadCard =
+        gameData.currentTrick.length > 0 ? gameData.currentTrick[0] : null;
+      const leadSuit = leadCard ? getEffectiveSuit(leadCard, trumpSuit) : null;
+
+      let legalPlays = player.hand;
+      if (leadSuit) {
+        const followingSuit = player.hand.filter(
+          (c) => getEffectiveSuit(c, trumpSuit) === leadSuit
+        );
+        if (followingSuit.length > 0) legalPlays = followingSuit;
+      }
+
+      if (legalPlays.length === 0) {
+        legalPlays = player.hand;
+      }
+
+      let cardToPlay;
+      if (!leadCard) {
+        // Leading the trick
+        const sortedPlays = [...legalPlays].sort((a, b) => {
+          const aValue =
+            (isTrumpCard(a, trumpSuit) ? 100 : 0) + getCardRank(a, trumpSuit);
+          const bValue =
+            (isTrumpCard(b, trumpSuit) ? 100 : 0) + getCardRank(b, trumpSuit);
+          return bValue - aValue; // Play highest card
+        });
+        cardToPlay = sortedPlays[0];
+      } else {
+        // Following suit
+        const winningCardInTrick = gameData.currentTrick.reduce(
+          (best, current) => {
+            const effectiveBestSuit = getEffectiveSuit(best, trumpSuit);
+            const effectiveCurrentSuit = getEffectiveSuit(current, trumpSuit);
+            if (effectiveCurrentSuit === effectiveBestSuit) {
+              return getCardRank(current, trumpSuit) >
+                getCardRank(best, trumpSuit)
+                ? current
+                : best;
+            }
+            return effectiveCurrentSuit === trumpSuit ? current : best;
+          },
+          gameData.currentTrick[0]
+        );
+
+        const winningRank = getCardRank(winningCardInTrick, trumpSuit);
+        const canWinCards = legalPlays.filter(
+          (c) =>
+            (getEffectiveSuit(c, trumpSuit) ===
+              getEffectiveSuit(winningCardInTrick, trumpSuit) &&
+              getCardRank(c, trumpSuit) > winningRank) ||
+            (getEffectiveSuit(c, trumpSuit) === trumpSuit &&
+              getEffectiveSuit(winningCardInTrick, trumpSuit) !== trumpSuit)
+        );
+
+        if (canWinCards.length > 0) {
+          // Play lowest winning card
+          cardToPlay = canWinCards.sort(
+            (a, b) => getCardRank(a, trumpSuit) - getCardRank(b, trumpSuit)
+          )[0];
+        } else {
+          // Can't win, play lowest card
+          cardToPlay = legalPlays.sort(
+            (a, b) => getCardRank(a, trumpSuit) - getCardRank(b, trumpSuit)
+          )[0];
+        }
+      }
+
+      if (!cardToPlay) {
+        console.error(`AI Error: No card chosen. Legal plays:`, legalPlays);
+        cardToPlay = legalPlays[0];
+      }
+
+      const cardIndex = player.hand.findIndex((c) => c.id === cardToPlay.id);
+      player.hand.splice(cardIndex, 1);
+
+      cardToPlay.player = player.id;
+      gameData.currentTrick.push(cardToPlay);
+      if (gameData.currentTrick.length === 1) {
+        gameData.trickLeadPlayerIndex = gameData.turnIndex;
+      }
+      gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
+      updateGame(gameId, gameData);
+    }
+  }, 1000 + Math.random() * 500);
+};
+
 // --- State Machine ---
 const handleStateChanges = (newGameData) => {
-  const oldPhase = gameData.phase;
+  const oldPhase = gameData ? gameData.phase : null;
   gameData = newGameData;
 
-  if (gameData.phase === "lobby") {
+  if (!gameData) {
+    console.log("No game data, returning to lobby.");
     showLobby();
     hideGame();
-    initLobby(gameId, currentUser);
+    initLobby(null, currentUser, createAndStartGame);
+    return;
+  }
+
+  if (gameData.phase === "lobby") {
+    if (oldPhase !== "lobby") {
+      showLobby();
+      hideGame();
+      initLobby(gameId, currentUser, createAndStartGame);
+    }
     return;
   }
 
   if (oldPhase === "lobby" && gameData.phase !== "lobby") {
     hideLobby();
     showGame();
+    if (!uiHelpers) {
+      uiHelpers = initUI(
+        handleCardClick,
+        handleBid,
+        handleTrumpSelection,
+        handleDiscard,
+        createAndStartGame,
+        startNewRound,
+        currentUser
+      );
+    }
+  }
+
+  if (!uiHelpers) {
+    uiHelpers = initUI(
+      handleCardClick,
+      handleBid,
+      handleTrumpSelection,
+      handleDiscard,
+      createAndStartGame,
+      startNewRound,
+      currentUser
+    );
   }
 
   updateUI(
@@ -520,6 +837,7 @@ const handleStateChanges = (newGameData) => {
     handleBid,
     currentUser
   );
+  updatePointDrawers(gameData, uiHelpers.createCardElement, currentUser);
 
   const currentPlayer = gameData.players[gameData.turnIndex];
   const isPlayerTurn = currentPlayer && currentPlayer.id === currentUser.uid;
@@ -530,31 +848,38 @@ const handleStateChanges = (newGameData) => {
       if (gameData.bidsMade === PLAYER_COUNT) {
         if (gameData.highBidderIndex === -1) {
           showMessage("All players passed. Redealing...", 2000);
-          setTimeout(startNewRound, 2000);
+          if (currentUser.uid === gameData.hostId) {
+            setTimeout(startNewRound, 2000);
+          }
           return;
         } else {
           gameData.phase = "widowPickup";
           gameData.turnIndex = gameData.highBidderIndex;
         }
-        updateGame(gameId, gameData);
+        if (currentUser.uid === gameData.hostId) {
+          updateGame(gameId, gameData);
+        }
         return;
       }
       showMessage(`${currentPlayer.name}'s turn to bid.`);
-      if (isPlayerTurn) renderBidButtons(gameData.highBid, handleBid);
+      if (isPlayerTurn) {
+        renderBidButtons(gameData.highBid, handleBid);
+      } else if (currentPlayer.isAI) {
+        aiAction();
+      }
       break;
     case "widowPickup":
       const bidderForWidow = gameData.players[gameData.highBidderIndex];
       showMessage(`${bidderForWidow.name} takes the widow...`, 1500);
-      setTimeout(() => {
-        gameData.widow.forEach((card) => {
-          card.originalOwner = bidderForWidow.id;
-          bidderForWidow.originalHand.push(card);
-        });
-        bidderForWidow.hand.push(...gameData.widow);
-        gameData.widow = [];
-        gameData.phase = "trumpSelection";
-        updateGame(gameId, gameData);
-      }, 1500);
+      if (currentUser.uid === gameData.hostId) {
+        setTimeout(() => {
+          bidderForWidow.originalHand.push(...gameData.widow);
+          bidderForWidow.hand.push(...gameData.widow);
+          gameData.widow = [];
+          gameData.phase = "trumpSelection";
+          updateGame(gameId, gameData);
+        }, 1500);
+      }
       return;
     case "trumpSelection":
       const bidder = gameData.players[gameData.highBidderIndex];
@@ -562,37 +887,45 @@ const handleStateChanges = (newGameData) => {
       if (bidder.id === currentUser.uid) {
         isMakingMove = false;
         renderTrumpSelection(handleTrumpSelection);
+      } else if (bidder.isAI) {
+        aiAction();
       }
       break;
     case "discarding":
       if (gameData.discardsMade === PLAYER_COUNT) {
-        isMakingMove = true;
-        let countdown = 5;
-        const intervalId = setInterval(() => {
-          showMessage(`Play starts in ${countdown}...`);
-          countdown--;
-          if (countdown < 0) {
-            clearInterval(intervalId);
-            clearAllActionMessages();
-            gameData.phase = "playing";
-            gameData.turnIndex = gameData.highBidderIndex;
-            updateGame(gameId, gameData);
-          }
-        }, 1000);
+        if (currentUser.uid === gameData.hostId) {
+          let countdown = 3;
+          const intervalId = setInterval(() => {
+            showMessage(`Play starts in ${countdown}...`);
+            countdown--;
+            if (countdown < 0) {
+              clearInterval(intervalId);
+              clearAllActionMessages();
+              gameData.phase = "playing";
+              gameData.turnIndex = gameData.highBidderIndex;
+              updateGame(gameId, gameData);
+            }
+          }, 1000);
+        }
         return;
       }
 
-      const player = gameData.players[gameData.turnIndex];
-      const isBidder = gameData.turnIndex === gameData.highBidderIndex;
-      const minCardsToDiscard = isBidder
-        ? player.hand.length - FINAL_HAND_SIZE
-        : CARDS_DEALT - FINAL_HAND_SIZE;
-      showMessage(
-        `${player.name} is discarding... Select at least ${minCardsToDiscard} cards.`
-      );
-
-      if (player.id === currentUser.uid) {
+      const currentPlayerToDiscard = gameData.players[gameData.turnIndex];
+      if (currentPlayerToDiscard.id === currentUser.uid) {
+        const isBidder =
+          gameData.players[gameData.highBidderIndex].id === currentUser.uid;
+        const minDiscards = isBidder
+          ? currentPlayerToDiscard.hand.length - FINAL_HAND_SIZE
+          : CARDS_DEALT - FINAL_HAND_SIZE;
+        showMessage(
+          `Your turn to discard. Select at least ${minDiscards} cards.`
+        );
         isMakingMove = false;
+      } else {
+        showMessage(`${currentPlayerToDiscard.name} is discarding...`);
+        if (currentPlayerToDiscard.isAI) {
+          aiAction();
+        }
       }
       break;
     case "playing":
@@ -603,33 +936,40 @@ const handleStateChanges = (newGameData) => {
         showMessage(
           `${gameData.players[gameData.turnIndex].name}'s turn to play.`
         );
-        if (gameData.players[gameData.turnIndex].id === currentUser.uid) {
+        if (isPlayerTurn) {
           isMakingMove = false;
+        } else if (currentPlayer.isAI) {
+          aiAction();
         }
       }
       break;
     case "scoring":
       isMakingMove = true;
       showMessage("Round over! Calculating scores...", 2000);
-      setTimeout(() => {
-        const results = calculateTeamPoints();
-        gameData.teams[0].score += results.team1.total;
-        gameData.teams[1].score += results.team2.total;
-        gameData.teams[0].roundPoints = results.team1.total;
-        gameData.teams[1].roundPoints = results.team2.total;
+      if (currentUser.uid === gameData.hostId) {
+        setTimeout(() => {
+          const results = calculateTeamPoints();
+          gameData.teams[0].score += results.team1.total;
+          gameData.teams[1].score += results.team2.total;
 
-        displayRoundResults(results, gameData, uiHelpers.createCardElement);
+          displayRoundResults(
+            results,
+            gameData,
+            uiHelpers.createCardElement,
+            currentUser
+          );
 
-        if (
-          gameData.teams[0].score >= WINNING_SCORE ||
-          gameData.teams[1].score >= WINNING_SCORE
-        ) {
-          gameData.phase = "gameOver";
-        } else {
-          gameData.phase = "roundEnd";
-        }
-        updateGame(gameId, gameData);
-      }, 1500);
+          if (
+            gameData.teams[0].score >= WINNING_SCORE ||
+            gameData.teams[1].score >= WINNING_SCORE
+          ) {
+            gameData.phase = "gameOver";
+          } else {
+            gameData.phase = "roundEnd";
+          }
+          updateGame(gameId, gameData);
+        }, 1500);
+      }
       break;
     case "roundEnd":
       isMakingMove = false;
@@ -637,22 +977,9 @@ const handleStateChanges = (newGameData) => {
       break;
     case "gameOver":
       isMakingMove = true;
-      showGameOver(gameData);
+      showGameOver(gameData, currentUser);
       break;
   }
-};
-
-const runGame = () => {
-  uiHelpers = initUI(
-    handleCardClick,
-    handleBid,
-    handleTrumpSelection,
-    handleDiscard,
-    startGame,
-    startNewRound,
-    currentUser
-  );
-  startGame();
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -662,4 +989,14 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("login-anonymous")
     .addEventListener("click", handleAnonymousLogin);
+
+  // Check for gameId in URL on initial load
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlGameId = urlParams.get("game");
+  if (urlGameId) {
+    // If there is a gameId, let onAuthStateChanged handle joining
+  } else {
+    // Otherwise, show auth right away
+    showAuthContainer();
+  }
 });

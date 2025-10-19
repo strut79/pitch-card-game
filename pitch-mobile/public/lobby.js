@@ -1,9 +1,10 @@
 import { onGameUpdate, updateGame } from "./firestore.js";
-import { dealCards, PLAYER_COUNT } from "./game.js";
+import { createNewGame, dealCards } from "./game.js";
 
 let gameData;
 let currentUser;
 let gameId;
+let createAndStartGameCallback;
 
 const team1Players = document.getElementById("team1-players");
 const team2Players = document.getElementById("team2-players");
@@ -34,7 +35,6 @@ const updateLobbyUI = () => {
     }
   });
 
-  // Show the start button if the current user is the host
   if (gameData.hostId === currentUser.uid) {
     startGameButton.classList.remove("hidden");
   } else {
@@ -42,75 +42,71 @@ const updateLobbyUI = () => {
   }
 };
 
-const handleTeamSelection = (teamId) => {
-  const player = gameData.players.find((p) => p.id === currentUser.uid);
-  if (player) {
-    player.team = teamId;
-    updateGame(gameId, { players: gameData.players });
+const handleTeamSelection = async (teamId) => {
+  if (!gameId) {
+    // First move, create the game
+    const newGameData = createNewGame(currentUser);
+    newGameData.players[0].team = teamId;
+    gameData = newGameData;
+    if (createAndStartGameCallback) {
+      await createAndStartGameCallback(gameData);
+    }
+  } else {
+    const player = gameData.players.find((p) => p.id === currentUser.uid);
+    if (player) {
+      player.team = teamId;
+      await updateGame(gameId, { players: gameData.players });
+    }
   }
 };
 
 const handleStartGame = () => {
-  // Fill empty slots with AI players
-  const team1PlayerCount = gameData.players.filter((p) => p.team === 1).length;
-  const team2PlayerCount = gameData.players.filter((p) => p.team === 2).length;
-  let team1SlotsToFill = 2 - team1PlayerCount;
-  let team2SlotsToFill = 2 - team2PlayerCount;
+  if (gameData.hostId !== currentUser.uid) return;
 
-  for (let i = 0; i < team1SlotsToFill; i++) {
-    const aiPlayer = {
-      id: `ai-team1-${i + 1}`,
-      name: `AI Player`,
+  // Reorder players for proper seating: T1, T2, T1, T2
+  const team1 = gameData.players.filter((p) => p.team === 1);
+  const team2 = gameData.players.filter((p) => p.team === 2);
+
+  // Fill empty slots with AI players
+  while (team1.length < 2) {
+    team1.push({
+      id: `ai-t1-${team1.length}`,
+      name: "AI Player",
       isAI: true,
       team: 1,
       hand: [],
       originalHand: [],
-    };
-    gameData.players.push(aiPlayer);
+    });
   }
-
-  for (let i = 0; i < team2SlotsToFill; i++) {
-    const aiPlayer = {
-      id: `ai-team2-${i + 1}`,
-      name: `AI Player`,
+  while (team2.length < 2) {
+    team2.push({
+      id: `ai-t2-${team2.length}`,
+      name: "AI Player",
       isAI: true,
       team: 2,
       hand: [],
       originalHand: [],
-    };
-    gameData.players.push(aiPlayer);
+    });
   }
 
-  const team1Full = gameData.players.filter((p) => p.team === 1);
-  const team2Full = gameData.players.filter((p) => p.team === 2);
-
-  // Assign player IDs to the team objects for scoring and reference
-  gameData.teams[0].players = team1Full.map((p) => p.id);
-  gameData.teams[1].players = team2Full.map((p) => p.id);
-
-  // Reorder the main players array to ensure turn rotation between teams (partners sit opposite)
-  const orderedPlayers = [];
-  while (team1Full.length > 0 || team2Full.length > 0) {
-    if (team1Full.length > 0) orderedPlayers.push(team1Full.shift());
-    if (team2Full.length > 0) orderedPlayers.push(team2Full.shift());
-  }
+  const orderedPlayers = [team1[0], team2[0], team1[1], team2[1]];
   gameData.players = orderedPlayers;
 
-  // Set initial dealer and the first player to bid (left of dealer)
-  gameData.dealerIndex = 0; // The host is the first dealer
-  gameData.turnIndex = (gameData.dealerIndex + 1) % PLAYER_COUNT;
+  // Assign player IDs to teams in gameData
+  gameData.teams[0].players = team1.map((p) => p.id);
+  gameData.teams[1].players = team2.map((p) => p.id);
 
-  // Deal cards to all players
   dealCards(gameData);
 
-  // Start the game
   gameData.phase = "bidding";
+  gameData.turnIndex = (gameData.dealerIndex + 1) % 4;
   updateGame(gameId, gameData);
 };
 
-export const initLobby = (id, user) => {
+export const initLobby = (id, user, createGameCallback) => {
   gameId = id;
   currentUser = user;
+  createAndStartGameCallback = createGameCallback;
 
   document
     .getElementById("team1")
@@ -120,8 +116,16 @@ export const initLobby = (id, user) => {
     .addEventListener("click", () => handleTeamSelection(2));
   startGameButton.addEventListener("click", handleStartGame);
 
-  onGameUpdate(gameId, (newGameData) => {
-    gameData = newGameData;
+  if (gameId) {
+    onGameUpdate(gameId, (newGameData) => {
+      if (newGameData) {
+        gameData = newGameData;
+        updateLobbyUI();
+      }
+    });
+  } else {
+    // No game yet, create a temporary local state for the first player
+    gameData = createNewGame(currentUser);
     updateLobbyUI();
-  });
+  }
 };
