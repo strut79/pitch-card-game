@@ -1,5 +1,6 @@
 html, body {
-			height: 100%;
+			/* CHANGED: Use 100svh to fit the *visible* viewport */
+			height: 100svh;
 			overflow: hidden;
 		}
 		body {
@@ -7,7 +8,8 @@ html, body {
 			background: radial-gradient(circle, #4a5568, #1a202c);
 		}
 		#game-container {
-			height: 100%;
+			/* CHANGED: Use 100svh to fit the *visible* viewport */
+			height: 100svh;
 			padding-left: env(safe-area-inset-left);
 			padding-right: env(safe-area-inset-right);
 		}
@@ -43,3 +45,4 @@ html, body {
             text-align: center;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
+

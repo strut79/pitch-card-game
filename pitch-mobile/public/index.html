@@ -11,7 +11,8 @@
 	<link rel="stylesheet" href="lobby.css">
 </head>
 
-<body class="select-none bg-gray-800 text-white min-h-screen">
+<!-- REMOVED min-h-screen here; style.css will handle the height -->
+<body class="select-none bg-gray-800 text-white">
 
 	<div id="auth-container"
 		class="hidden w-full h-full absolute inset-0 bg-gray-800 z-50 flex flex-col items-center justify-center">
@@ -241,7 +242,7 @@
 					<h3 class="text-lg font-semibold text-white mb-2">Scoring Points</h3>
 					<p>At the end of the round, up to 7 points are awarded. A team gets a point for each of the
 						following
-						they have captured in their tricks:</p>
+						they have. captured in their tricks:</p>
 					<ul class="list-disc list-inside space-y-1">
 						<li><strong>High:</strong> Capturing the highest trump card played in the round.</li>
 						<li><strong>Low:</strong> Awarded to the team that was dealt the lowest trump card. (You get
@@ -342,3 +343,4 @@
 </body>
 
 </html>
+
