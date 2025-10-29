@@ -34,7 +34,6 @@ html, body {
 		.drawer-open {
 			transform: translateX(0) !important;
 		}
-		/* <!-- CHANGED --> Added rule to fix drawer jumping on iOS */
 		.drawer-content-area {
 			height: 60svh;
 		}
@@ -45,4 +44,5 @@ html, body {
             text-align: center;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
+
 

@@ -11,7 +11,7 @@
 	<link rel="stylesheet" href="lobby.css">
 </head>
 
-<!-- REMOVED min-h-screen here; style.css will handle the height -->
+<!-- Using 100svh via style.css to handle mobile browser bars -->
 <body class="select-none bg-gray-800 text-white">
 
 	<div id="auth-container"
@@ -241,13 +241,11 @@
 				<div class="rules-section">
 					<h3 class="text-lg font-semibold text-white mb-2">Scoring Points</h3>
 					<p>At the end of the round, up to 7 points are awarded. A team gets a point for each of the
-						following
-						they have. captured in their tricks:</p>
+						following:</p>
 					<ul class="list-disc list-inside space-y-1">
 						<li><strong>High:</strong> Capturing the highest trump card played in the round.</li>
-						<li><strong>Low:</strong> Awarded to the team that was dealt the lowest trump card. (You get
-							this
-							point even if your opponent captures the card).</li>
+						<!-- CHANGED: Updated 'Low' rule text to match Rule #3 -->
+						<li><strong>Low:</strong> The team that *plays* the lowest trump card of the round gets this point (even if they don't win the trick).</li>
 						<li><strong>Jack:</strong> Capturing the Jack of the trump suit.</li>
 						<li><strong>Off-Jack:</strong> Capturing the Jack of the same color as trump.</li>
 						<li><strong>Joker:</strong> One point for each Joker captured.</li>
@@ -257,7 +255,7 @@
 					<p class="font-bold text-red-400 mt-2"><strong>Making the Bid:</strong> If the bidding team scores
 						at
 						least as many points as their bid, they get all the points they earned. If they fail, their bid
-						amount is <strong>subtracted</strong> from their total score.</p>
+						amount is <strong>subtracted</strong> from their total score, and the opposing team scores any points they won.</p>
 				</div>
 			</div>
 		</div>
@@ -343,4 +341,5 @@
 </body>
 
 </html>
+
 
