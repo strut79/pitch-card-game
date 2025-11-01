@@ -186,6 +186,7 @@ export const createNewGame = (user) => {
         roundPoints: 0,
         cardsWon: [],
         pointCards: [],
+        cardValue: 0, // FIX: Add cardValue to track "Game" points
       },
       {
         id: "team2",
@@ -194,6 +195,7 @@ export const createNewGame = (user) => {
         roundPoints: 0,
         cardsWon: [],
         pointCards: [],
+        cardValue: 0, // FIX: Add cardValue to track "Game" points
       },
     ],
     phase: "lobby",
@@ -209,3 +211,4 @@ export const createNewGame = (user) => {
     tricksPlayed: 0,
   };
 };
+

@@ -277,6 +277,7 @@ const startNewRound = () => {
     team.roundPoints = 0;
     team.cardsWon = [];
     team.pointCards = [];
+    team.cardValue = 0; // FIX: Reset cardValue
   });
 
   gameData.phase = "bidding";
@@ -340,6 +341,33 @@ const checkTrickWinner = () => {
   setTimeout(() => {
     if (winnerTeam) {
       winnerTeam.cardsWon.push(...trick);
+
+      // --- FIX: Live point calculation ---
+      let roundPointsWonThisTrick = 0;
+      let cardValueWonThisTrick = 0;
+      const trumpSuit = gameData.trumpSuit;
+
+      trick.forEach(card => {
+        cardValueWonThisTrick += getCardPointValue(card);
+
+        const isJack = card.value === "Jack" && card.suit === trumpSuit;
+        const isOffJack = card.value === "Jack" && 
+                          card.suit !== trumpSuit && 
+                          getSuitColor(card.suit) === getSuitColor(trumpSuit);
+        const isJoker = card.value === "Joker";
+
+        if (isJack || isOffJack || isJoker) {
+          // Add to pointCards if it's not already there
+          if (!winnerTeam.pointCards.some(pc => pc.id === card.id)) {
+            winnerTeam.pointCards.push(card);
+            roundPointsWonThisTrick++;
+          }
+        }
+      });
+
+      winnerTeam.roundPoints += roundPointsWonThisTrick;
+      winnerTeam.cardValue += cardValueWonThisTrick;
+      // --- End of FIX ---
     }
 
     gameData.currentTrick = [];
@@ -359,20 +387,20 @@ const calculateTeamPoints = () => {
   const biddingTeam = teams.find((t) => t.players.includes(bidder.id));
   const otherTeam = teams.find((t) => !t.players.includes(bidder.id));
 
-  // Reset round points and point cards
+  // FIX: Reset only the point *badges* (isHigh, isLow) on cards, not the whole array
   teams.forEach((t) => {
-    t.roundPoints = 0;
-    t.pointCards = [];
+    t.pointCards.forEach(c => {
+      c.isHigh = false;
+      c.isLow = false;
+    });
   });
 
   // 1. Calculate Card Value totals ("Game" point)
-  const cardValueTotals = { [biddingTeam.id]: 0, [otherTeam.id]: 0 };
-  biddingTeam.cardsWon.forEach(
-    (card) => (cardValueTotals[biddingTeam.id] += getCardPointValue(card))
-  );
-  otherTeam.cardsWon.forEach(
-    (card) => (cardValueTotals[otherTeam.id] += getCardPointValue(card))
-  );
+  // FIX: Read directly from the summed cardValue property
+  const cardValueTotals = {
+    [biddingTeam.id]: biddingTeam.cardValue,
+    [otherTeam.id]: otherTeam.cardValue,
+  };
 
   // 2. Find all cards that were ACTUALLY IN PLAY (i.e., captured in tricks)
   const allCardsPlayed = [...teams[0].cardsWon, ...teams[1].cardsWon];
@@ -386,31 +414,14 @@ const calculateTeamPoints = () => {
     lowTrump = allTrumpsPlayed[0];
   }
 
-  // 3. Define the point cards we're looking for
+  // 3. Define the point cards we're looking for (ONLY High and Low)
+  // FIX: Removed Jack, Off-Jack, and Jokers as they are calculated live
   const pointCardDefinitions = [
     { name: "High", card: highTrump },
     { name: "Low", card: lowTrump },
-    {
-      name: "Jack",
-      card: allCardsPlayed.find(
-        (c) => c.value === "Jack" && c.suit === trumpSuit
-      ),
-    },
-    {
-      name: "Off-Jack",
-      card: allCardsPlayed.find(
-        (c) =>
-          c.value === "Jack" &&
-          getSuitColor(c.suit) === getSuitColor(trumpSuit) &&
-          c.suit !== trumpSuit
-      ),
-    },
-    ...allCardsPlayed
-      .filter((c) => c.value === "Joker")
-      .map((joker) => ({ name: "Joker", card: joker })),
   ];
 
-  // 4. Award points for High, Jack, Off-Jack, Jokers
+  // 4. Award points for High, Low
   pointCardDefinitions.forEach(({ name, card }) => {
     if (!card) return; // Card wasn't in play
 
@@ -433,12 +444,17 @@ const calculateTeamPoints = () => {
     if (teamToAward) {
       teamToAward.roundPoints++;
       // Add badge info for UI
-      const cardForDisplay = { ...card };
-      if (name === "High") cardForDisplay.isHigh = true;
-      if (name === "Low") cardForDisplay.isLow = true; 
-      // Prevent duplicates
-      if (!teamToAward.pointCards.some((c) => c.id === cardForDisplay.id)) {
-        teamToAward.pointCards.push(cardForDisplay);
+      // Check if card is already in the array from live update (e.g., Low Joker)
+      let cardInArray = teamToAward.pointCards.find(c => c.id === card.id);
+      if (cardInArray) {
+         if (name === "High") cardInArray.isHigh = true;
+         if (name === "Low") cardInArray.isLow = true; 
+      } else {
+         // Card wasn't a J/OJ/Joker, so add it now
+         const cardForDisplay = { ...card };
+         if (name === "High") cardForDisplay.isHigh = true;
+         if (name === "Low") cardForDisplay.isLow = true; 
+         teamToAward.pointCards.push(cardForDisplay);
       }
     }
   });
@@ -1140,5 +1156,4 @@ document.addEventListener("DOMContentLoaded", () => {
     mockLogin(handleAuthChange);
   }
 });
-
 
