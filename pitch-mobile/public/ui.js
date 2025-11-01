@@ -4,6 +4,8 @@ let playerHandElements = [];
 let playerInfoElements = [];
 let trickAreaElements = [];
 let playerBidDisplayElements = [];
+// FIX: Add player1ClusterEl
+let player1ClusterEl;
 let bidButtonsContainer, trumpSelectionContainer, discardButtonContainer;
 let messageBox, messageText, team1PointsDisplay, team2PointsDisplay;
 let team1RoundPointsLive, team2RoundPointsLive, winningBidDisplay;
@@ -67,6 +69,8 @@ export const initUI = (
     document.getElementById("player3-status-display"),
     document.getElementById("player4-status-display"),
   ];
+  // FIX: Get the new cluster element
+  player1ClusterEl = document.getElementById("player1-ui-cluster");
   bidButtonsContainer = document.getElementById("bid-buttons-container");
   trumpSelectionContainer = document.getElementById(
     "trump-selection-container"
@@ -104,25 +108,32 @@ export const initUI = (
   widowHandEl = document.getElementById("widow-hand");
 
   document
-    .getElementById("full-reset-button")
-    .addEventListener("click", startGame);
-  document
-    .getElementById("discard-button")
-    .addEventListener("click", handleDiscard);
-  document
     .getElementById("rules-button")
     .addEventListener("click", () => rulesOverlay.classList.remove("hidden"));
 
   if (rulesOverlay) {
     rulesOverlay.addEventListener("click", (event) => {
-      if (event.target.id === "close-rules-button") {
+      // Check if the click is on the close button itself
+      if (
+        event.target.id === "close-rules-button" ||
+        (event.target.parentElement && event.target.parentElement.id === "close-rules-button")
+      ) {
         rulesOverlay.classList.add("hidden");
       }
     });
+    // Ensure the button inside the overlay is also checked
+    document
+      .getElementById("close-rules-button")
+      .addEventListener("click", () =>
+        rulesOverlay.classList.add("hidden")
+      );
   }
 
   nextRoundButton.addEventListener("click", startNewRound);
-  playAgainButton.addEventListener("click", startGame);
+  
+  document
+    .getElementById("discard-button")
+    .addEventListener("click", handleDiscard);
 
   team1DrawerTab.addEventListener("click", () =>
     team1Drawer.classList.toggle("drawer-open")
@@ -158,9 +169,11 @@ export const initUI = (
       classes.push("transform", "hover:-translate-y-4", "cursor-pointer");
 
     if (isSummary) {
-      classes.push("w-12 h-20 relative");
+      // Summary cards (in drawers, etc.) are relative
+      classes.push("w-12 h-20 relative"); 
     } else {
-      const sizeClass = "w-16 h-24 md:w-20 md:h-28";
+      // Hand cards (in the fan) are absolute
+      const sizeClass = "w-14 h-20 md:w-16 md:h-24";
       classes.push(sizeClass, "absolute");
     }
 
@@ -174,13 +187,13 @@ export const initUI = (
       cardEl.classList.add("bg-green-200", "text-green-800");
       let gameHTML = `
                 <div class="text-center">
-                    <div class="text-3xl">🎯</div>
+                    <div class="text-3xl">🏆</div>
                     <div class="font-bold text-xs">GAME</div>
                 </div>`;
       if (options.count) {
         gameHTML = `
                 <div class="text-center w-full">
-                    <div class="text-lg">🎯</div>
+                    <div class="text-lg">🏆</div>
                     <div class="font-bold text-2xl leading-none">${options.count}</div>
                     <div class="font-bold text-xs">GAME</div>
                 </div>`;
@@ -200,8 +213,9 @@ export const initUI = (
       let posClassBottom;
 
       if (card.value === "Joker") {
-        symbol = "🃏";
-        valueDisplay = isSummary ? "JKR" : "Joker";
+        // FIX: Changed from '🃏' to '🤡'
+        symbol = "🤡"; 
+        valueDisplay = "JKR"; // Use "JKR" in corner
         rankClass = isSummary ? "text-xs" : "text-lg";
         symbolClass = isSummary ? "text-3xl" : "text-4xl";
         posClassTop = isSummary ? "top-0.5 left-0.5" : "top-1 left-1";
@@ -217,6 +231,13 @@ export const initUI = (
         posClassBottom = isSummary ? "bottom-0 right-1" : "bottom-1 right-1";
       }
 
+      if (!isSummary) {
+        rankClass = "text-base";
+        symbolClass = "text-3xl";
+      }
+
+      // The 'absolute' positioned ranks are trapped by the
+      // parent card's 'relative' or 'absolute' position.
       cardEl.innerHTML = `
                 <div class="absolute ${posClassTop} font-bold ${rankClass}">${valueDisplay}</div>
                 <div class="${symbolClass}">${symbol}</div>
@@ -287,25 +308,62 @@ export const renderHand = (
   const isMobile = window.innerWidth < 640;
 
   if (!isPlayer && isMobile) {
+    // Show stacked face-down cards for opponents on mobile
     hand.forEach((card, index) => {
-      const cardEl = createCardElement(card, { faceDown: true, orientation });
+      const cardEl = createCardElement(card, { faceDown: true, orientation, isSummary: true });
+      // This cardEl has 'relative' from createCardElement
+      // We override it with 'absolute' for stacking
+      cardEl.style.position = "absolute"; 
       cardEl.style.left = "50%";
       cardEl.style.top = "50%";
       const offset = index * 2;
-      cardEl.style.transform = `translate(calc(-50% + ${offset}px), calc(-50% + ${offset}px))`;
+      
+      // Adjust transform based on orientation
+      switch(orientation) {
+          case 'top':
+              cardEl.style.transform = `translate(calc(-50% + ${offset}px), -50%)`;
+              break;
+          case 'left':
+              cardEl.style.transform = `translate(-50%, calc(-50% + ${offset}px))`;
+              break;
+          case 'right':
+              cardEl.style.transform = `translate(-50%, calc(-50% + ${offset}px))`;
+              break;
+          default:
+              cardEl.style.transform = `translate(calc(-50% + ${offset}px), -50%)`;
+      }
       handEl.appendChild(cardEl);
     });
 
     if (hand.length > 0) {
       const cardCountBadge = document.createElement("div");
       cardCountBadge.className =
-        "absolute -bottom-2 right-10 bg-gray-900 bg-opacity-70 text-white text-sm font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-gray-500 z-10";
+        "absolute bottom-0 right-0 bg-gray-900 bg-opacity-70 text-white text-sm font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-gray-500 z-10";
       cardCountBadge.textContent = hand.length;
+      // Adjust badge position based on orientation
+       switch(orientation) {
+          case 'top':
+              cardCountBadge.style.bottom = "-0.5rem";
+              cardCountBadge.style.right = "50%";
+              cardCountBadge.style.transform = "translateX(50%)";
+              break;
+          case 'left':
+              cardCountBadge.style.bottom = "50%";
+              cardCountBadge.style.right = "-0.5rem";
+              cardCountBadge.style.transform = "translateY(50%)";
+              break;
+          case 'right':
+              cardCountBadge.style.bottom = "50%";
+              cardCountBadge.style.left = "-0.5rem";
+              cardCountBadge.style.transform = "translateY(50%)";
+              break;
+      }
       handEl.appendChild(cardCountBadge);
     }
     return;
   }
 
+  // Full fan display for player 1 or desktop
   const cardCount = hand.length;
   let fanAngle,
     anglePerCard,
@@ -326,15 +384,19 @@ export const renderHand = (
     fanAngle = Math.min(cardCount * 10, maxFanAngle);
     anglePerCard = cardCount > 1 ? fanAngle / (cardCount - 1) : 0;
     startAngle = -fanAngle / 2;
-    const maxHorizontalOffset = isMobile ? 30 : 55;
+    
+    const maxHorizontalOffset = isMobile ? 50 : 65; 
+    
     horizontalOffset = Math.min(
       maxHorizontalOffset,
-      (handEl.offsetWidth * 0.8) / cardCount
+      (handEl.offsetWidth * 0.9) / cardCount // Use 90% of width
     );
     totalSize = (cardCount - 1) * horizontalOffset;
   }
 
   hand.forEach((card, index) => {
+    // This call will have 'isSummary: false', so the card
+    // will get 'position: absolute' from createCardElement
     const cardEl = createCardElement(card, {
       faceDown: !isPlayer,
       isPlayerHand: isPlayer,
@@ -353,9 +415,10 @@ export const renderHand = (
         xTransform = `calc(-50% + ${
           -totalSize / 2 + index * horizontalOffset
         }px)`;
-        yTransform = `${Math.abs(rotation) / 4}px`;
+        yTransform = `${Math.abs(rotation) / 2.5}px`; 
         cardEl.style.transform = `translateX(${xTransform}) translateY(${yTransform}) rotate(${rotation}deg)`;
-        cardEl.style.bottom = "0";
+        // FIX: Was 'bottom: 0', now 'top: 0' relative to the hand container
+        cardEl.style.top = "0";
         cardEl.style.left = "50%";
         break;
       case "top":
@@ -363,7 +426,7 @@ export const renderHand = (
         xTransform = `calc(-50% + ${
           -totalSize / 2 + index * horizontalOffset
         }px)`;
-        yTransform = `${-Math.abs(rotation) / 4}px`;
+        yTransform = `${-Math.abs(rotation) / 2.5}px`; 
         cardEl.style.transform = `translateX(${xTransform}) translateY(${yTransform}) rotate(${rotation}deg)`;
         cardEl.style.top = "0";
         cardEl.style.left = "50%";
@@ -399,10 +462,12 @@ export const renderWidow = (gameData, createCardElement) => {
   const widow = gameData.widow || [];
   widow.forEach((card, index) => {
     const isFaceUp = index === widow.length - 1;
+    // This call has 'isSummary: true', so card gets 'relative'
     const cardEl = createCardElement(card, {
       faceDown: !isFaceUp,
       isSummary: true,
     });
+    // We override it with 'absolute' for stacking
     cardEl.style.position = "absolute";
     cardEl.style.left = "50%";
     cardEl.style.top = "50%";
@@ -486,16 +551,25 @@ export const renderTrick = (gameData, createCardElement, currentUser) => {
   ];
 
   gameData.currentTrick.forEach((playedCard) => {
+    const originalPlayerIndex = gameData.players.findIndex(p => p.id === playedCard.player);
     const reorderedPlayerIndex = reorderedPlayers.findIndex(
       (p) => p.id === playedCard.player
     );
+
     if (
       reorderedPlayerIndex !== -1 &&
       trickAreaElements[reorderedPlayerIndex]
     ) {
-      trickAreaElements[reorderedPlayerIndex].appendChild(
-        createCardElement(playedCard)
-      );
+      // Create card (will have 'absolute' from createCardElement)
+      const cardEl = createCardElement(playedCard);
+      
+      // THIS IS THE FIX:
+      // Remove 'absolute' so it sits in the grid area
+      cardEl.classList.remove("absolute");
+      // Add 'relative' so the 'absolute' ranks are trapped
+      cardEl.classList.add("relative"); 
+
+      trickAreaElements[reorderedPlayerIndex].appendChild(cardEl);
     }
   });
 };
@@ -581,6 +655,23 @@ export const displayRoundResults = (
     team2PointCardsEl.appendChild(createCardElement(card, { isSummary: true }));
   });
 
+  if (remainingDeckDisplay) {
+    remainingDeckDisplay.innerHTML = ""; 
+    const deck = gameData.deck || [];
+
+    if (deck.length === 0) {
+      remainingDeckDisplay.innerHTML = `<p class="text-gray-400 text-sm">Deck is empty</p>`;
+    } else {
+      deck.forEach((card, index) => {
+        const cardEl = createCardElement(card, {
+          faceDown: false,
+          isSummary: true,
+        });
+        remainingDeckDisplay.appendChild(cardEl);
+      });
+    }
+  }
+
   roundSummaryOverlay.classList.remove("hidden");
 };
 
@@ -644,6 +735,7 @@ export const updateUI = (
 
   renderWidow(gameData, createCardElement);
 
+  // Use a minimal timeout to ensure container widths are calculated
   setTimeout(() => {
     reorderedPlayers.forEach((p, i) => {
       p.orientation = orientations[i];
@@ -690,6 +782,10 @@ export const updateUI = (
 
   const currentPlayer = gameData.players[gameData.turnIndex];
   const isPlayerTurn = currentPlayer && currentPlayer.id === currentUser.uid;
+  
+  // FIX: Check for any action phase
+  const isActionPhase = gameData.phase === "bidding" || gameData.phase === "trumpSelection" || gameData.phase === "discarding";
+
   const isDiscarding =
     gameData.phase === "discarding" &&
     currentPlayer &&
@@ -705,6 +801,19 @@ export const updateUI = (
   );
   discardButtonContainer.classList.toggle("hidden", !isDiscarding);
 
+  // FIX: Add logic to slide the Player 1 UI cluster
+  if (player1ClusterEl) {
+    if (isActionPhase) {
+      // Move cluster UP to make room for footer buttons
+      player1ClusterEl.classList.remove("bottom-4");
+      player1ClusterEl.classList.add("bottom-28");
+    } else {
+      // Move cluster DOWN during regular play
+      player1ClusterEl.classList.remove("bottom-28");
+      player1ClusterEl.classList.add("bottom-4");
+    }
+  }
+
   if (gameData.phase === "bidding" && isPlayerTurn) {
     renderBidButtons(gameData.highBid, handleBid);
   }
@@ -712,7 +821,16 @@ export const updateUI = (
 
 export const showGameOver = (gameData, currentUser) => {
   hideMessage();
-  roundSummaryOverlay.classList.add("hidden");
+  if (roundSummaryOverlay) roundSummaryOverlay.classList.add("hidden");
+
+  // Handle gameData being null or undefined
+  if (!gameData || !gameData.teams || !currentUser) {
+      document.getElementById("game-over-title").textContent = "Game Over!";
+      document.getElementById("final-score-team1").textContent = "0";
+      document.getElementById("final-score-team2").textContent = "0";
+      if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
+      return;
+  }
 
   const playerTeam = gameData.teams.find((t) =>
     t.players.includes(currentUser.uid)
@@ -723,6 +841,9 @@ export const showGameOver = (gameData, currentUser) => {
 
   if (!playerTeam || !opponentTeam) {
     document.getElementById("game-over-title").textContent = "Game Over!";
+    document.getElementById("final-score-team1").textContent = gameData.teams[0].score;
+    document.getElementById("final-score-team2").textContent = gameData.teams[1].score;
+    if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
     return;
   }
 
@@ -735,14 +856,16 @@ export const showGameOver = (gameData, currentUser) => {
   } else if (opponentTeamWon && !playerTeamWon) {
     winnerMessage = "Opponents Win.";
   } else {
-    winnerMessage = "It's a Tie!";
+    // This can happen if both teams cross 21 on the same hand
+    winnerMessage = playerTeam.score > opponentTeam.score ? "🎉 You Win! 🎉" : "Opponents Win.";
+    if(playerTeam.score === opponentTeam.score) winnerMessage = "It's a Tie!";
   }
 
   document.getElementById("game-over-title").textContent = winnerMessage;
   document.getElementById("final-score-team1").textContent = playerTeam.score;
   document.getElementById("final-score-team2").textContent = opponentTeam.score;
 
-  gameOverOverlay.classList.remove("hidden");
+  if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
 };
 
 export const showAuthContainer = () => {
@@ -777,3 +900,4 @@ export const showGame = () => {
 export const hideRoundSummary = () => {
   if (roundSummaryOverlay) roundSummaryOverlay.classList.add("hidden");
 };
+

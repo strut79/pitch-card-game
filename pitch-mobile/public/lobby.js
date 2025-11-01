@@ -96,11 +96,14 @@ const handleStartGame = () => {
   const team1 = gameData.players.filter((p) => p.team === 1);
   const team2 = gameData.players.filter((p) => p.team === 2);
 
+  // FIX: Add a counter for AI names
+  let aiCounter = 1;
+
   // Fill empty slots with AI players
   while (team1.length < 2) {
     team1.push({
       id: `ai-t1-${team1.length}`,
-      name: "AI Player",
+      name: `AI Player ${aiCounter++}`, // <-- Use counter
       isAI: true,
       team: 1,
       hand: [],
@@ -110,7 +113,7 @@ const handleStartGame = () => {
   while (team2.length < 2) {
     team2.push({
       id: `ai-t2-${team2.length}`,
-      name: "AI Player",
+      name: `AI Player ${aiCounter++}`, // <-- Use counter
       isAI: true,
       team: 2,
       hand: [],
@@ -167,5 +170,4 @@ export const initLobby = (
 
   // FIX: No listener here. main.js handles listeners.
 };
-
 

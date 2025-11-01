@@ -1,19 +1,28 @@
-// --- ALL IMPORTS MUST BE AT THE VERY TOP ---
-
-// Firebase/Auth Imports
+// --- IMPORTS ---
+// Import auth and db INSTANCES from our local file
 import { auth, db } from "./firebase.js";
+
+// Import auth METHODS from the Firebase CDN
 import {
   GoogleAuthProvider,
   signInWithPopup,
   signInAnonymously,
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+
+// Import Firestore METHODS from the Firebase CDN
 import {
   doc,
   getDoc,
 } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
-// Game Logic Imports
+// Import our other local modules
+import {
+  createGame as fbCreateGame,
+  onGameUpdate as fbOnGameUpdate,
+  updateGame as fbUpdateGame,
+} from "./firestore.js";
+
 import {
   PLAYER_COUNT,
   CARDS_DEALT,
@@ -21,7 +30,7 @@ import {
   WIDOW_SIZE,
   WINNING_SCORE,
   suits,
-  cardSymbols,
+  // FIX: Removed unused 'cardSymbols' import
   isTrumpCard,
   isProtectedCard,
   getEffectiveSuit,
@@ -30,7 +39,9 @@ import {
   getCardPointValue,
   createDeck,
   createNewGame,
+  dealCards,
 } from "./game.js";
+
 import {
   initUI,
   showMessage,
@@ -59,171 +70,137 @@ import {
 } from "./ui.js";
 import { initLobby, renderLobby } from "./lobby.js";
 
-// --- END IMPORTS ---
-
-console.log("main.js executed");
-
 // --- LOCAL TEST TOGGLE ---
 const USE_FIREBASE = false;
-// -------------------------
+console.log("main.js executed");
 
-// --- Firestore functions (will be loaded conditionally) ---
-let createGame_firebase, onGameUpdate_firebase, updateGame_firebase;
-let firebaseFunctionsLoaded = false;
+// --- MOCK FUNCTIONS (for local testing) ---
+let mockGameData = {};
+let mockGameUpdateCallback = () => {};
+const mockCreateGame = async (gameData) => {
+  console.log("MOCK: createGame");
+  mockGameData = { ...gameData };
+  mockGameData.id = "local-game";
+  return "local-game";
+};
+const mockOnGameUpdate = (gameId, callback) => {
+  console.log("MOCK: onGameUpdate (storing callback)");
+  mockGameUpdateCallback = callback;
+  // Fire initial state
+  setTimeout(() => mockGameUpdateCallback(mockGameData), 0);
+  return () => {
+    mockGameUpdateCallback = () => {};
+  }; // Return an unsubscribe function
+};
+const mockUpdateGame = async (gameId, partialGameData) => {
+  console.log("MOCK: updateGame (merging data and triggering callback)");
+  mockGameData = { ...mockGameData, ...partialGameData };
+  // Trigger the listener
+  setTimeout(() => mockGameUpdateCallback(mockGameData), 0);
+};
+const mockLogin = async (handler) => {
+  console.log("MOCK: login");
+  const mockUser = {
+    uid: "local-user-uid",
+    displayName: "Local Player",
+  };
+  handler(mockUser);
+};
 
-if (USE_FIREBASE) {
-  import('./firestore.js')
-    .then((firestore) => {
-      createGame_firebase = firestore.createGame;
-      onGameUpdate_firebase = firestore.onGameUpdate;
-      updateGame_firebase = firestore.updateGame;
-      firebaseFunctionsLoaded = true;
-      console.log("Dynamic: Firebase functions loaded.");
-    })
-    .catch(err => console.error("Error loading firestore module:", err));
-}
+// --- REAL FUNCTIONS (to be used based on toggle) ---
+const realCreateGame = fbCreateGame;
+const realOnGameUpdate = fbOnGameUpdate;
+const realUpdateGame = fbUpdateGame;
+
+const handleGoogleLogin = async () => {
+  if (USE_FIREBASE) {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      showMessage("Error logging in with Google. Please try again.", 3000);
+      console.error("Google sign-in error", error);
+    }
+  } else {
+    mockLogin(handleAuthChange);
+  }
+};
+const handleAnonymousLogin = async () => {
+  if (USE_FIREBASE) {
+    try {
+      await signInAnonymously(auth);
+    } catch (error) {
+      showMessage("Error signing in as guest. Please try again.", 3000);
+      console.error("Anonymous sign-in error", error);
+    }
+  } else {
+    mockLogin(handleAuthChange);
+  }
+};
+
+// --- DYNAMICALLY SET FUNCTIONS ---
+const createGame = USE_FIREBASE ? realCreateGame : mockCreateGame;
+const onGameUpdate = USE_FIREBASE ? realOnGameUpdate : mockOnGameUpdate;
+const updateGame = USE_FIREBASE ? realUpdateGame : mockUpdateGame;
 
 // --- Game State ---
 let gameData = {}; // Holds the entire game state
+let oldPhase = ""; // Track previous phase
 let isMakingMove = false; // Prevents multiple actions at once
 let selectedDiscards = []; // Cards the player has selected to discard
 let uiHelpers;
 let currentUser = null;
 let gameId = null;
-let localStateCallback = (data) => handleStateChanges(data);
-let oldPhase = null; // FIX: Moved oldPhase to module scope
+let unsubscribeFromGame = () => {}; // To store the onSnapshot unsub function
 
-// --- MOCK / WRAPPER FUNCTIONS ---
-
-const createGame = async (initialGameData) => {
-  if (USE_FIREBASE) {
-    if (!firebaseFunctionsLoaded) {
-      console.error("Firebase functions not loaded yet. Cannot create game.");
-      return;
+// --- Auth ---
+function handleAuthChange(user) {
+  console.log("handleAuthChange called");
+  if (user) {
+    console.log("User is logged in:", user);
+    currentUser = user;
+    hideAuthContainer();
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlGameId = urlParams.get("game");
+    console.log("urlGameId:", urlGameId);
+    if (urlGameId && USE_FIREBASE) {
+      console.log("Joining game...");
+      joinGame(urlGameId);
+    } else {
+      console.log("No game in URL, creating/showing lobby.");
+      // We're not in a game yet, so create a new local lobby state
+      const newLobbyData = createNewGame(currentUser);
+      if (USE_FIREBASE) {
+        // This path is for "create new game" online
+        showLobby();
+        initLobby(null, currentUser, createNewGame, createGame, updateGame);
+        renderLobby(newLobbyData, currentUser);
+      } else {
+        // This path is for local mode
+        mockGameData = newLobbyData;
+        gameId = "local-game";
+        initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
+        // Directly subscribe to the mock game
+        unsubscribeFromGame = mockOnGameUpdate(gameId, handleStateChanges);
+      }
     }
-    return await createGame_firebase(initialGameData);
   } else {
-    console.log("MOCK: createGame");
-    gameId = "localGame";
-    gameData = initialGameData; // Set the initial global state
-    return "localGame";
+    console.log("User is not logged in.");
+    currentUser = null;
+    showAuthContainer();
+    hideLobby();
+    hideGame();
   }
-};
-
-const onGameUpdate = (id, callback) => {
-  if (USE_FIREBASE) {
-    if (!firebaseFunctionsLoaded) {
-      console.error("Firebase functions not loaded yet. Cannot listen for updates.");
-      return () => {}; // Return empty unsubscribe
-    }
-    return onGameUpdate_firebase(id, callback);
-  } else {
-    console.log("MOCK: onGameUpdate (storing callback)");
-    localStateCallback = callback;
-    return () => { localStateCallback = () => {}; }; // Return unsubscribe function
-  }
-};
-
-const updateGame = async (id, partialData) => {
-  if (USE_FIREBASE) {
-     if (!firebaseFunctionsLoaded) {
-      console.error("Firebase functions not loaded yet. Cannot update game.");
-      return;
-    }
-    return await updateGame_firebase(id, partialData);
-  } else {
-    console.log("MOCK: updateGame (merging data and triggering callback)");
-    Object.assign(gameData, partialData);
-    setTimeout(() => localStateCallback(gameData), 0);
-  }
-};
-
-// --- Auth (Original functions are fine) ---
-const handleGoogleLogin = async () => {
-  const provider = new GoogleAuthProvider();
-  try {
-    await signInWithPopup(auth, provider);
-  } catch (error) {
-    showMessage("Error logging in with Google. Please try again.", 3000);
-    console.error("Google sign-in error", error);
-  }
-};
-
-const handleAnonymousLogin = async () => {
-  try {
-    await signInAnonymously(auth);
-  } catch (error) {
-    showMessage("Error signing in as guest. Please try again.", 3000);
-    console.error("Anonymous sign-in error", error);
-  }
-};
+}
 
 // --- Game Logic: Core ---
 
-const resetGame = () => {
-  // Easiest way to reset everything in local mode is to reload.
-  if (!USE_FIREBASE) {
-    window.location.reload();
-    return;
-  }
-
-  // In Firebase mode, we'd reset the game document to lobby
-  const newGame = createNewGame(currentUser);
-  newGame.hostId = gameData.hostId;
-  newGame.players = gameData.players.map(p => ({
-      ...p,
-      team: null,
-      hand: [],
-      originalHand: [],
-      bid: 0,
-      hasBid: false
-  }));
-  newGame.teams = [
-      { id: "team1", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [] },
-      { id: "team2", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [] }
-  ];
-  
-  // Reset scores from gameData (if they exist)
-  if(gameData.teams) {
-      newGame.teams[0].score = gameData.teams[0].score;
-      newGame.teams[1].score = gameData.teams[1].score;
-  }
-  
-  gameData = newGame; // Update local state immediately
-  updateGame(gameId, gameData);
-};
-
-
-const createAndStartGame = async (lobbyGameData) => {
-  console.log("Creating a new game from lobby data...");
-  gameId = await createGame(lobbyGameData); // Calls wrapper
-  
-  if (USE_FIREBASE) {
-      console.log("Game created with ID:", gameId);
-      window.history.pushState(null, null, `?game=${gameId}`);
-      console.log("URL updated.");
-  }
-
-  onGameUpdate(gameId, (newGameData) => { // Calls wrapper
-    handleStateChanges(newGameData);
-  });
-  
-  if (!USE_FIREBASE) {
-      // Manually trigger first update
-      localStateCallback(gameData);
-  }
-};
+// FIX: Removed unused handleTeamSelection and handleStartGame.
+// The real logic is now correctly encapsulated in lobby.js.
 
 const joinGame = async (id) => {
-  uiHelpers = initUI(
-    handleCardClick,
-    handleBid,
-    handleTrumpSelection,
-    handleDiscard,
-    resetGame, // Pass resetGame for "Play Again"
-    startNewRound,
-    currentUser
-  );
+  if (!USE_FIREBASE) return; // Should not be called in local mode
+
   gameId = id;
 
   const gameRef = doc(db, "games", gameId);
@@ -232,9 +209,11 @@ const joinGame = async (id) => {
   if (!gameSnap.exists()) {
     console.error("Game not found!");
     window.history.replaceState(null, null, window.location.pathname);
+    // Show a fresh lobby
+    const newLobbyData = createNewGame(currentUser);
     showLobby();
-    hideGame();
-    initLobby(null, currentUser, createNewGame, createAndStartGame, updateGame);
+    initLobby(null, currentUser, createNewGame, createGame, updateGame);
+    renderLobby(newLobbyData, currentUser);
     return;
   }
   const existingGameData = gameSnap.data();
@@ -252,40 +231,47 @@ const joinGame = async (id) => {
       team: null,
     };
     existingGameData.players.push(newPlayer);
-    await updateGame(gameId, { players: existingGameData.players }); // Calls wrapper
+    await updateGame(gameId, { players: existingGameData.players });
   }
+  
+  initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
 
-  onGameUpdate(gameId, (newGameData) => { // Calls wrapper
-    handleStateChanges(newGameData);
-  });
+  // Subscribe to game updates
+  unsubscribeFromGame = onGameUpdate(gameId, handleStateChanges);
+};
+
+const resetGame = () => {
+  console.log("Resetting game...");
+  // Unsubscribe from old game
+  if (unsubscribeFromGame) unsubscribeFromGame();
+
+  // Reset local state
+  gameData = {};
+  oldPhase = "";
+  isMakingMove = false;
+  selectedDiscards = [];
+  gameId = null;
+  currentUser = null;
+  
+  // Go back to auth screen
+  hideLobby();
+  hideGame();
+  showGameOver(null); // FIX: This is now safe due to the fix in ui.js
+  showAuthContainer();
 };
 
 const startNewRound = () => {
-  if (USE_FIREBASE && gameData.hostId !== currentUser.uid) return;
-  
+  if (gameData.hostId !== currentUser.uid) return;
   hideRoundSummary();
 
   const newDealerIndex = (gameData.dealerIndex + 1) % PLAYER_COUNT;
-  const deck = createDeck();
-
+  
   gameData.players.forEach((player) => {
-    player.hand = [];
-    player.originalHand = [];
     player.bid = 0;
     player.hasBid = false;
   });
 
-  for (let i = 0; i < CARDS_DEALT * PLAYER_COUNT; i++) {
-    const playerIndex = (newDealerIndex + 1 + i) % PLAYER_COUNT;
-    const card = deck.pop();
-    card.originalOwner = gameData.players[playerIndex].id;
-    gameData.players[playerIndex].hand.push(card);
-    gameData.players[playerIndex].originalHand.push(card);
-  }
-
-  const widow = deck.splice(0, WIDOW_SIZE);
-  gameData.widow = widow;
-  gameData.deck = deck;
+  dealCards(gameData); // dealCards handles deck creation, shuffle, hand reset
 
   gameData.teams.forEach((team) => {
     team.roundPoints = 0;
@@ -303,7 +289,7 @@ const startNewRound = () => {
   gameData.currentTrick = [];
   gameData.tricksPlayed = 0;
 
-  updateGame(gameId, gameData); // Calls wrapper
+  updateGame(gameId, gameData);
 };
 
 const checkTrickWinner = () => {
@@ -363,7 +349,7 @@ const checkTrickWinner = () => {
     if (gameData.tricksPlayed === FINAL_HAND_SIZE) {
       gameData.phase = "scoring";
     }
-    updateGame(gameId, gameData); // Calls wrapper
+    updateGame(gameId, gameData);
   }, 2000);
 };
 
@@ -373,11 +359,13 @@ const calculateTeamPoints = () => {
   const biddingTeam = teams.find((t) => t.players.includes(bidder.id));
   const otherTeam = teams.find((t) => !t.players.includes(bidder.id));
 
+  // Reset round points and point cards
   teams.forEach((t) => {
     t.roundPoints = 0;
     t.pointCards = [];
   });
 
+  // 1. Calculate Card Value totals ("Game" point)
   const cardValueTotals = { [biddingTeam.id]: 0, [otherTeam.id]: 0 };
   biddingTeam.cardsWon.forEach(
     (card) => (cardValueTotals[biddingTeam.id] += getCardPointValue(card))
@@ -386,21 +374,19 @@ const calculateTeamPoints = () => {
     (card) => (cardValueTotals[otherTeam.id] += getCardPointValue(card))
   );
 
-  const allCardsPlayed = [...biddingTeam.cardsWon, ...otherTeam.cardsWon];
-  const allTrumpsPlayed = allCardsPlayed.filter((c) =>
-    isTrumpCard(c, trumpSuit)
-  );
+  // 2. Find all cards that were ACTUALLY IN PLAY (i.e., captured in tricks)
+  const allCardsPlayed = [...teams[0].cardsWon, ...teams[1].cardsWon];
+  const allTrumpsPlayed = allCardsPlayed
+    .filter((c) => isTrumpCard(c, trumpSuit))
+    .sort((a, b) => getCardRank(a, trumpSuit) - getCardRank(b, trumpSuit));
 
   let highTrump, lowTrump;
-
   if (allTrumpsPlayed.length > 0) {
-    const sortedTrumpsPlayed = [...allTrumpsPlayed].sort(
-      (a, b) => getCardRank(a, trumpSuit) - getCardRank(b, trumpSuit)
-    );
-    highTrump = sortedTrumpsPlayed[sortedTrumpsPlayed.length - 1];
-    lowTrump = sortedTrumpsPlayed[0];
+    highTrump = allTrumpsPlayed[allTrumpsPlayed.length - 1];
+    lowTrump = allTrumpsPlayed[0];
   }
 
+  // 3. Define the point cards we're looking for
   const pointCardDefinitions = [
     { name: "High", card: highTrump },
     { name: "Low", card: lowTrump },
@@ -424,48 +410,54 @@ const calculateTeamPoints = () => {
       .map((joker) => ({ name: "Joker", card: joker })),
   ];
 
+  // 4. Award points for High, Jack, Off-Jack, Jokers
   pointCardDefinitions.forEach(({ name, card }) => {
-    if (!card) return;
-    let teamToAward;
+    if (!card) return; // Card wasn't in play
 
+    let teamToAward;
     if (name === "Low") {
-      teamToAward = teams.find((t) => t.players.includes(card.player));
+      // Special "Low" rule: point goes to the team that PLAYED it
+      const playerWhoPlayedLow = players.find((p) => p.id === card.player);
+      teamToAward = playerWhoPlayedLow
+        ? teams.find((t) => t.players.includes(playerWhoPlayedLow.id))
+        : null;
     } else {
-      const winnerOfCard = biddingTeam.cardsWon.some((c) => c.id === card.id)
+      // Standard rule: point goes to the team that CAPTURED it
+      teamToAward = biddingTeam.cardsWon.some((c) => c.id === card.id)
         ? biddingTeam
         : otherTeam.cardsWon.some((c) => c.id === card.id)
         ? otherTeam
         : null;
-      teamToAward = winnerOfCard;
     }
 
     if (teamToAward) {
       teamToAward.roundPoints++;
+      // Add badge info for UI
       const cardForDisplay = { ...card };
       if (name === "High") cardForDisplay.isHigh = true;
-      if (name === "Low") cardForDisplay.isLow = true;
+      if (name === "Low") cardForDisplay.isLow = true; 
+      // Prevent duplicates
       if (!teamToAward.pointCards.some((c) => c.id === cardForDisplay.id)) {
         teamToAward.pointCards.push(cardForDisplay);
       }
     }
   });
 
+  // 5. Award "Game" point
   if (cardValueTotals[biddingTeam.id] > cardValueTotals[otherTeam.id]) {
     biddingTeam.roundPoints++;
   } else if (cardValueTotals[otherTeam.id] > cardValueTotals[biddingTeam.id]) {
     otherTeam.roundPoints++;
   }
+  // Note: No point for a tie in "Game"
 
-  // --- SCORING FIX ---
-  // Check if the bidding team failed.
+  // 6. Check if bidder made their bid
   if (biddingTeam.roundPoints < highBid) {
-    // If they failed, set their score to negative bid.
-    biddingTeam.roundPoints = -highBid;
+    biddingTeam.roundPoints = -highBid; // Bidder is set
   }
-  // The 'otherTeam.roundPoints' is left alone. They keep whatever they earned.
-  // The 'else' block that zeroed out their score has been removed.
-  // --- END SCORING FIX ---
+  // The non-bidding team (otherTeam) keeps whatever points they made.
 
+  // 7. Return summary
   return {
     team1: {
       total: teams[0].roundPoints,
@@ -493,7 +485,7 @@ const handleBid = (bidValue) => {
     gameData.highBidderIndex = gameData.turnIndex;
   }
   gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-  updateGame(gameId, gameData).finally(() => { // Calls wrapper
+  updateGame(gameId, gameData).finally(() => {
     isMakingMove = false;
   });
 };
@@ -504,10 +496,10 @@ const handleTrumpSelection = (suit) => {
   gameData.trumpSuit = suit;
 
   gameData.phase = "discarding";
-  gameData.turnIndex = 0;
+  gameData.turnIndex = 0; // Start discard phase from first player
   gameData.discardsMade = 0;
-  gameData.players.forEach((p) => (p.hasDiscarded = false));
-  updateGame(gameId, gameData).finally(() => { // Calls wrapper
+  gameData.players.forEach((p) => (p.hasDiscarded = false)); // Reset for new phase
+  updateGame(gameId, gameData).finally(() => {
     isMakingMove = false;
   });
 };
@@ -526,12 +518,13 @@ const toggleDiscardSelection = (card) => {
   } else {
     selectedDiscards.push(card);
   }
+  
   updateUI(
     gameData,
     selectedDiscards,
     handleCardClick,
     uiHelpers.createCardElement,
-    handleBid,
+    handleBid, 
     currentUser
   );
 };
@@ -577,7 +570,7 @@ const handleDiscard = () => {
     deck: gameData.deck,
     turnIndex: gameData.turnIndex,
     discardsMade: gameData.discardsMade,
-  }).finally(() => { // Calls wrapper
+  }).finally(() => {
     isMakingMove = false;
   });
 };
@@ -610,15 +603,13 @@ const handleCardPlay = (card) => {
   }
 
   player.hand = player.hand.filter((c) => c.id !== card.id);
-  
-  card.player = player.id; // For 'Low' rule
-
+  card.player = player.id; // <-- Set the player ID on the card
   gameData.currentTrick.push(card);
   if (gameData.currentTrick.length === 1) {
     gameData.trickLeadPlayerIndex = gameData.turnIndex;
   }
   gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-  updateGame(gameId, gameData).finally(() => { // Calls wrapper
+  updateGame(gameId, gameData).finally(() => {
     isMakingMove = false;
   });
 };
@@ -636,8 +627,6 @@ const aiAction = () => {
   if (!player || !player.isAI) return;
 
   setTimeout(() => {
-    let determinedBid; // Declare here
-    let bestSuit; // Declare here
     if (gameData.phase === "bidding") {
       const evaluateHandForSuit = (hand, trumpSuit) => {
         let score = 0;
@@ -658,7 +647,7 @@ const aiAction = () => {
         return score;
       };
 
-      bestSuit = null; // Assign here
+      let bestSuit = null;
       let maxScore = 0;
       suits.forEach((suit) => {
         const score = evaluateHandForSuit(player.hand, suit);
@@ -668,7 +657,7 @@ const aiAction = () => {
         }
       });
 
-      determinedBid = "pass"; // Assign here
+      let determinedBid = "pass";
       if (maxScore > 12) determinedBid = 6;
       else if (maxScore > 10) determinedBid = 5;
       else if (maxScore > 8) determinedBid = 4;
@@ -679,7 +668,7 @@ const aiAction = () => {
         determinedBid = "pass";
       }
 
-      handleBid(determinedBid); // Calls wrapper
+      handleBid(determinedBid);
     } else if (gameData.phase === "trumpSelection") {
       const evaluateHandForSuit = (hand, trumpSuit) => {
         let score = 0;
@@ -700,7 +689,7 @@ const aiAction = () => {
         return score;
       };
 
-      bestSuit = "Spades"; // Assign here
+      let bestSuit = "Spades";
       let maxScore = -1;
       suits.forEach((suit) => {
         const score = evaluateHandForSuit(player.hand, suit);
@@ -710,7 +699,7 @@ const aiAction = () => {
         }
       });
 
-      handleTrumpSelection(bestSuit); // Calls wrapper
+      handleTrumpSelection(bestSuit);
     } else if (gameData.phase === "discarding") {
       const aiPlayer = player;
       const trumpSuit = gameData.trumpSuit;
@@ -766,13 +755,13 @@ const aiAction = () => {
 
       gameData.discardsMade++;
       gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-      
+
       updateGame(gameId, {
         players: gameData.players,
         deck: gameData.deck,
         turnIndex: gameData.turnIndex,
         discardsMade: gameData.discardsMade,
-      }); // Calls wrapper
+      });
     } else if (gameData.phase === "playing") {
       const trumpSuit = gameData.trumpSuit;
       const leadCard =
@@ -850,312 +839,305 @@ const aiAction = () => {
       const cardIndex = player.hand.findIndex((c) => c.id === cardToPlay.id);
       player.hand.splice(cardIndex, 1);
 
-      cardToPlay.player = player.id; // For 'Low' rule
-
+      cardToPlay.player = player.id; // <-- Set the player ID on the card
       gameData.currentTrick.push(cardToPlay);
       if (gameData.currentTrick.length === 1) {
         gameData.trickLeadPlayerIndex = gameData.turnIndex;
       }
       gameData.turnIndex = (gameData.turnIndex + 1) % PLAYER_COUNT;
-      updateGame(gameId, gameData); // Calls wrapper
+      updateGame(gameId, gameData);
     }
   }, 1000 + Math.random() * 500);
 };
 
 // --- State Machine ---
 const handleStateChanges = (newGameData) => {
-  console.log(`handleStateChanges: oldPhase=${oldPhase}, newPhase=${newGameData ? newGameData.phase : "null"}`);
-  
+  console.log(
+    `handleStateChanges: oldPhase=${oldPhase}, newPhase=${newGameData.phase}`
+  );
   gameData = newGameData;
 
-  if (!gameData) {
-    console.log("No game data, returning to lobby.");
-    showLobby();
-    hideGame();
-    initLobby(null, currentUser, createNewGame, createAndStartGame, updateGame);
-    oldPhase = "lobby"; // Set initial oldPhase
+  if (!gameData || !gameData.phase) {
+    console.log("No game data or phase, returning to lobby.");
+    resetGame();
     return;
   }
 
-  // --- This is the new core logic ---
+  // --- UI Switching ---
   if (gameData.phase === "lobby") {
-    // We are in the lobby phase
     if (oldPhase !== "lobby") {
-      // We just entered the lobby
       console.log("State Change: Entering Lobby");
-      showLobby();
       hideGame();
+      showLobby();
     }
-    // Always re-render the lobby UI with the latest data
     renderLobby(gameData, currentUser);
-  } else {
-    // We are in a game phase
-    if (oldPhase === "lobby") {
-      // We just LEFT the lobby
-      console.log("State Change: Exiting Lobby, Entering Game");
-      hideLobby();
-      showGame();
-      if (!uiHelpers) {
-        uiHelpers = initUI(
-          handleCardClick,
-          handleBid,
-          handleTrumpSelection,
-          handleDiscard,
-          resetGame, // Pass resetGame for "Play Again"
-          startNewRound,
-          currentUser
-        );
-      }
+  } else if (oldPhase === "lobby" && gameData.phase !== "lobby") {
+    console.log("State Change: Exiting Lobby, Entering Game");
+    hideLobby();
+    showGame();
+    if (!uiHelpers) {
+      uiHelpers = initUI(
+        handleCardClick,
+        handleBid,
+        handleTrumpSelection,
+        handleDiscard,
+        resetGame, // Use resetGame for "Play Again"
+        startNewRound,
+        currentUser
+      );
+    }
+  }
+
+  // --- In-Game UI Updates ---
+  if (gameData.phase !== "lobby") {
+    if (!uiHelpers) {
+      // Failsafe if uiHelpers aren't set yet (e.g., joining mid-game)
+      uiHelpers = initUI(
+        handleCardClick,
+        handleBid,
+        handleTrumpSelection,
+        handleDiscard,
+        resetGame,
+        startNewRound,
+        currentUser
+      );
     }
     
-    // This block now *only* runs if we are in a game phase
-    if (!uiHelpers) {
-       uiHelpers = initUI(
-          handleCardClick,
-          handleBid,
-          handleTrumpSelection,
-          handleDiscard,
-          resetGame, // Pass resetGame for "Play Again"
-          startNewRound,
-          currentUser
-        );
-    }
-
     updateUI(
       gameData,
       selectedDiscards,
       handleCardClick,
       uiHelpers.createCardElement,
-      handleBid,
+      handleBid, 
       currentUser
     );
     updatePointDrawers(gameData, uiHelpers.createCardElement, currentUser);
-
-    const currentPlayer = gameData.players[gameData.turnIndex];
-    const isPlayerTurn = currentPlayer && currentPlayer.id === currentUser.uid;
-
-    switch (gameData.phase) {
-      case "bidding":
-        isMakingMove = false;
-        if (gameData.bidsMade === PLAYER_COUNT) {
-          if (gameData.highBidderIndex === -1) {
-            showMessage("All players passed. Redealing...", 2000);
-            if (USE_FIREBASE && currentUser.uid !== gameData.hostId) {
-              // Do nothing, wait for host
-            } else {
-              setTimeout(startNewRound, 2000); // Host or local mode
-            }
-          } else {
-            gameData.phase = "widowPickup";
-            gameData.turnIndex = gameData.highBidderIndex;
-            if (USE_FIREBASE && currentUser.uid !== gameData.hostId) {
-                // Do nothing, wait for host
-            } else {
-              updateGame(gameId, gameData); // Host or local mode
-            }
-          }
-        } else {
-            showMessage(`${currentPlayer.name}'s turn to bid.`);
-            if (isPlayerTurn) {
-              renderBidButtons(gameData.highBid, handleBid);
-            } else if (currentPlayer.isAI) {
-              aiAction();
-            }
-        }
-        break;
-      case "widowPickup":
-        const bidderForWidow = gameData.players[gameData.highBidderIndex];
-        showMessage(`${bidderForWidow.name} takes the widow...`, 1500);
-        if (USE_FIREBASE && currentUser.uid !== gameData.hostId) {
-          // Do nothing, wait for host
-        } else {
-          setTimeout(() => { // Host or local mode
-            bidderForWidow.originalHand.push(...gameData.widow);
-            bidderForWidow.hand.push(...gameData.widow);
-            gameData.widow = [];
-            gameData.phase = "trumpSelection";
-            updateGame(gameId, gameData);
-          }, 1500);
-        }
-        break;
-      case "trumpSelection":
-        const bidder = gameData.players[gameData.highBidderIndex];
-        showMessage(`${bidder.name} is choosing trump...`);
-        if (bidder.id === currentUser.uid) {
-          isMakingMove = false;
-          renderTrumpSelection(handleTrumpSelection);
-        } else if (bidder.isAI) {
-          aiAction();
-        }
-        break;
-      case "discarding":
-        if (gameData.discardsMade === PLAYER_COUNT) {
-          if (USE_FIREBASE && currentUser.uid !== gameData.hostId) {
-            // Do nothing, wait for host
-          } else { // Host or local mode
-            let countdown = 3;
-            const intervalId = setInterval(() => {
-              showMessage(`Play starts in ${countdown}...`);
-              countdown--;
-              if (countdown < 0) {
-                clearInterval(intervalId);
-                clearAllActionMessages();
-                gameData.phase = "playing";
-                gameData.turnIndex = gameData.highBidderIndex;
-                updateGame(gameId, gameData);
-              }
-            }, 1000);
-          }
-        } else {
-            const currentPlayerToDiscard = gameData.players[gameData.turnIndex];
-            if (currentPlayerToDiscard.id === currentUser.uid) {
-              const isBidder =
-                gameData.players[gameData.highBidderIndex].id === currentUser.uid;
-              const minDiscards = isBidder
-                ? currentPlayerToDiscard.hand.length - FINAL_HAND_SIZE
-                : CARDS_DEALT - FINAL_HAND_SIZE;
-              showMessage(
-                `Your turn to discard. Select at least ${minDiscards} cards.`
-              );
-              isMakingMove = false;
-            } else {
-              showMessage(`${currentPlayerToDiscard.name} is discarding...`);
-              if (currentPlayerToDiscard.isAI) {
-                aiAction();
-              }
-            }
-        }
-        break;
-      case "playing":
-        if (gameData.currentTrick.length === PLAYER_COUNT) {
-          isMakingMove = true;
-          checkTrickWinner();
-        } else {
-          showMessage(
-            `${gameData.players[gameData.turnIndex].name}'s turn to play.`
-          );
-          if (isPlayerTurn) {
-            isMakingMove = false;
-          } else if (currentPlayer.isAI) {
-            aiAction();
-          }
-        }
-        break;
-      case "scoring":
-        isMakingMove = true;
-        showMessage("Round over! Calculating scores...", 2000);
-        if (USE_FIREBASE && currentUser.uid !== gameData.hostId) {
-          // Do nothing, wait for host
-        } else { // Host or local mode
-          setTimeout(() => {
-            const results = calculateTeamPoints();
-            gameData.teams[0].score += results.team1.total;
-            gameData.teams[1].score += results.team2.total;
-
-            displayRoundResults(
-              results,
-              gameData,
-              uiHelpers.createCardElement,
-              currentUser
-            );
-
-            if (
-              gameData.teams[0].score >= WINNING_SCORE ||
-              gameData.teams[1].score >= WINNING_SCORE
-            ) {
-              gameData.phase = "gameOver";
-            } else {
-              gameData.phase = "roundEnd";
-            }
-            updateGame(gameId, gameData);
-          }, 1500);
-        }
-        break;
-      case "roundEnd":
-        isMakingMove = false;
-        hideMessage();
-        break;
-      case "gameOver":
-        isMakingMove = true;
-        showGameOver(gameData, currentUser);
-        break;
-    }
   }
 
-  // FIX: Update oldPhase *at the end* of the function
-  oldPhase = gameData ? gameData.phase : null;
+  const currentPlayer = gameData.players[gameData.turnIndex];
+  const isPlayerTurn = currentPlayer && currentPlayer.id === currentUser.uid;
+  
+  const playerIndex = gameData.players.findIndex((p) => p.id === currentUser.uid);
+  if (playerIndex === -1 && gameData.phase !== "lobby") {
+      console.warn("Current user not found in players array.");
+      return;
+  }
+  const reorderedPlayers = [
+    ...gameData.players.slice(playerIndex),
+    ...gameData.players.slice(0, playerIndex),
+  ];
+
+  // Clear all action messages at the start of every state change
+  clearAllActionMessages();
+
+  switch (gameData.phase) {
+    case "bidding":
+      isMakingMove = false;
+      if (gameData.bidsMade === PLAYER_COUNT) {
+        if (gameData.highBidderIndex === -1) {
+          showMessage("All players passed. Redealing...", 2000);
+          if (currentUser.uid === gameData.hostId) {
+            setTimeout(startNewRound, 2000);
+          }
+        } else {
+          gameData.phase = "widowPickup";
+          gameData.turnIndex = gameData.highBidderIndex;
+          if (currentUser.uid === gameData.hostId) {
+            updateGame(gameId, gameData);
+          }
+        }
+        break; 
+      }
+
+      // Show generic message
+      showMessage(`${currentPlayer.name}'s turn to bid.`);
+      
+      // Show specific action prompt
+      const reorderedBiddingIndex = reorderedPlayers.findIndex((p) => p.id === currentPlayer.id);
+      if (reorderedBiddingIndex !== -1) {
+          displayActionMessage(reorderedBiddingIndex, "Turn to bid");
+      }
+
+      if (isPlayerTurn) {
+        renderBidButtons(gameData.highBid, handleBid);
+      } else if (currentPlayer.isAI) {
+        aiAction();
+      }
+      break;
+
+    case "widowPickup":
+      const bidderForWidow = gameData.players[gameData.highBidderIndex];
+      showMessage(`${bidderForWidow.name} takes the widow...`, 1500);
+      if (currentUser.uid === gameData.hostId) {
+        setTimeout(() => {
+          // Use originalHand for scoring, but hand for playing
+          bidderForWidow.originalHand.push(...gameData.widow);
+          bidderForWidow.hand.push(...gameData.widow);
+          gameData.widow = [];
+          gameData.phase = "trumpSelection";
+          updateGame(gameId, gameData);
+        }, 1500);
+      }
+      break;
+
+    case "trumpSelection":
+      const bidder = gameData.players[gameData.highBidderIndex];
+      const reorderedBidderIndex = reorderedPlayers.findIndex((p) => p.id === bidder.id);
+      
+      // Use action display
+      if (reorderedBidderIndex !== -1) {
+          displayActionMessage(reorderedBidderIndex, "Choosing trump...");
+      } else {
+          showMessage(`${bidder.name} is choosing trump...`);
+      }
+      
+      if (bidder.id === currentUser.uid) {
+        isMakingMove = false;
+        renderTrumpSelection(handleTrumpSelection);
+      } else if (bidder.isAI) {
+        aiAction();
+      }
+      break;
+
+    case "discarding":
+      if (gameData.discardsMade === PLAYER_COUNT) {
+        if (currentUser.uid === gameData.hostId) {
+          let countdown = 3;
+          showMessage(`Play starts in ${countdown}...`);
+          const intervalId = setInterval(() => {
+            countdown--;
+            if (countdown <= 0) { 
+              clearInterval(intervalId);
+              clearAllActionMessages(); 
+              hideMessage(); 
+              gameData.phase = "playing";
+              gameData.turnIndex = gameData.highBidderIndex; 
+              updateGame(gameId, gameData);
+            } else {
+                showMessage(`Play starts in ${countdown}...`); 
+            }
+          }, 1000);
+        }
+        break; 
+      }
+
+      const currentPlayerToDiscard = gameData.players[gameData.turnIndex];
+      const reorderedDiscarderIndex = reorderedPlayers.findIndex((p) => p.id === currentPlayerToDiscard.id);
+
+      if (currentPlayerToDiscard.id === currentUser.uid) {
+        const isBidder =
+          gameData.players[gameData.highBidderIndex].id === currentUser.uid;
+        const minDiscards = isBidder
+          ? currentPlayerToDiscard.hand.length - FINAL_HAND_SIZE
+          : CARDS_DEALT - FINAL_HAND_SIZE;
+        
+        // Use a prompt *and* a message
+        showMessage(
+          `You must select at least ${minDiscards} cards to discard.`
+        );
+        displayActionMessage(0, "Your turn to discard");
+        isMakingMove = false;
+      } else {
+        if (reorderedDiscarderIndex !== -1) {
+            displayActionMessage(reorderedDiscarderIndex, "Discarding...");
+        } else {
+            showMessage(`${currentPlayerToDiscard.name} is discarding...`);
+        }
+        if (currentPlayerToDiscard.isAI) {
+          aiAction();
+        }
+      }
+      break;
+
+    case "playing":
+      if (gameData.currentTrick.length === PLAYER_COUNT) {
+        isMakingMove = true; // Prevent actions while trick winner is being decided
+        checkTrickWinner();
+      } else {
+        const reorderedPlayerIndex = reorderedPlayers.findIndex((p) => p.id === currentPlayer.id);
+        
+        // Use action display
+        if (reorderedPlayerIndex !== -1) {
+            displayActionMessage(reorderedPlayerIndex, "Turn to play");
+        } else {
+            showMessage(`${currentPlayer.name}'s turn to play.`);
+        }
+        
+        if (isPlayerTurn) {
+          isMakingMove = false;
+        } else if (currentPlayer.isAI) {
+          aiAction();
+        }
+      }
+      break;
+
+    case "scoring":
+      isMakingMove = true;
+      showMessage("Round over! Calculating scores...", 2000);
+      if (currentUser.uid === gameData.hostId) {
+        setTimeout(() => {
+          const results = calculateTeamPoints();
+          gameData.teams[0].score += results.team1.total;
+          gameData.teams[1].score += results.team2.total;
+
+          displayRoundResults(
+            results,
+            gameData,
+            uiHelpers.createCardElement,
+            currentUser
+          );
+
+          if (
+            gameData.teams[0].score >= WINNING_SCORE ||
+            gameData.teams[1].score >= WINNING_SCORE
+          ) {
+            gameData.phase = "gameOver";
+          } else {
+            gameData.phase = "roundEnd";
+          }
+          updateGame(gameId, gameData);
+        }, 1500);
+      }
+      break;
+
+    case "roundEnd":
+      isMakingMove = false;
+      hideMessage();
+      break;
+
+    case "gameOver":
+      isMakingMove = true;
+      showGameOver(gameData, currentUser);
+      break;
+  }
+
+  oldPhase = gameData.phase; // Update oldPhase at the end
 };
 
-
-// --- APP ENTRY POINT ---
+// --- DOMContentLoaded ---
 document.addEventListener("DOMContentLoaded", () => {
   console.log("DOMContentLoaded event fired.");
+  document
+    .getElementById("login-google")
+    .addEventListener("click", handleGoogleLogin);
+  document
+    .getElementById("login-anonymous")
+    .addEventListener("click", handleAnonymousLogin);
+  
+  // FIX: Removed initLobby from here. It's now called in handleAuthChange.
+  
+  // Wire up "Play Again"
+  document.getElementById("play-again-button").addEventListener("click", resetGame);
+  document.getElementById("full-reset-button").addEventListener("click", resetGame);
+
 
   if (USE_FIREBASE) {
-    // --- ONLINE MODE ---
-    console.log("Firebase ENABLED. Running in online mode.");
-    document
-      .getElementById("login-google")
-      .addEventListener("click", handleGoogleLogin);
-    document
-      .getElementById("login-anonymous")
-      .addEventListener("click", handleAnonymousLogin);
-
-    onAuthStateChanged(auth, (user) => {
-      console.log("onAuthStateChanged called (Firebase Enabled)");
-      if (user) {
-        console.log("User is logged in:", user);
-        currentUser = user;
-        hideAuthContainer();
-        
-        initLobby(null, currentUser, createNewGame, createAndStartGame, updateGame);
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlGameId = urlParams.get("game");
-        console.log("urlGameId:", urlGameId);
-        
-        if (urlGameId) {
-          console.log("Joining game...");
-          joinGame(urlGameId);
-        } else {
-          console.log("No game in URL, showing lobby to create one.");
-          showLobby();
-          hideGame();
-          // Manually render lobby for the first time
-          const initialLobbyState = createNewGame(currentUser);
-          gameData = initialLobbyState; // Set global game data
-          oldPhase = "lobby"; // Set initial oldPhase
-          renderLobby(initialLobbyState, currentUser);
-        }
-      } else {
-        console.log("User is not logged in.");
-        currentUser = null;
-        showAuthContainer();
-      }
-    });
-
+    console.log("Firebase ENABLED. Setting up auth listener.");
+    onAuthStateChanged(auth, handleAuthChange);
   } else {
-    // --- LOCAL TEST MODE ---
     console.log("Firebase DISABLED. Running in local test mode.");
-    currentUser = {
-      uid: "localPlayer1",
-      displayName: "Local Player",
-    };
-    
-    hideAuthContainer();
-    document.getElementById("login-google").style.display = 'none';
-    document.getElementById("login-anonymous").style.display = 'none';
-
-    showLobby();
-    hideGame();
-    
-    initLobby(null, currentUser, createNewGame, createAndStartGame, updateGame);
-    
-    // Manually render lobby for the first time
-    const initialLobbyState = createNewGame(currentUser);
-    gameData = initialLobbyState; // Set global game data
-    oldPhase = "lobby"; // Set initial oldPhase
-    renderLobby(initialLobbyState, currentUser);
+    // Bypassing auth and starting lobby immediately
+    mockLogin(handleAuthChange);
   }
 });
 

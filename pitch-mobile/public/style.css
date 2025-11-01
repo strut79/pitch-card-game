@@ -1,48 +1,46 @@
 html, body {
-			/* CHANGED: Use 100svh to fit the *visible* viewport */
-			height: 100svh;
-			overflow: hidden;
-		}
-		body {
-			font-family: 'Inter', sans-serif;
-			background: radial-gradient(circle, #4a5568, #1a202c);
-		}
-		#game-container {
-			/* CHANGED: Use 100svh to fit the *visible* viewport */
-			height: 100svh;
-			padding-left: env(safe-area-inset-left);
-			padding-right: env(safe-area-inset-right);
-		}
-		#game-container > header {
-			padding-top: env(safe-area-inset-top);
-		}
-		#game-container > footer {
-			padding-bottom: env(safe-area-inset-bottom);
-		}
-		.card {
-			transform-origin: center center;
-		}
-		.rules-section {
-			padding-bottom: 0.75rem;
-			border-bottom: 1px solid #4a5568;
-			margin-bottom: 0.75rem;
-		}
-		.rules-section:last-child {
-			border-bottom: none;
-			margin-bottom: 0;
-		}
-		.drawer-open {
-			transform: translateX(0) !important;
-		}
-		.drawer-content-area {
-			height: 60svh;
-		}
-        .player-name {
-            color: white;
-            font-size: 1rem;
-            font-weight: 600;
-            text-align: center;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-        }
-
+	/* FIX V1.8: Removed height: 100svh; */
+	overflow: hidden;
+}
+body {
+	font-family: 'Inter', sans-serif;
+	background: radial-gradient(circle, #4a5568, #1a202c);
+}
+#game-container {
+	/* FIX V1.8: Removed height: 100svh; */
+	padding-left: env(safe-area-inset-left);
+	padding-right: env(safe-area-inset-right);
+}
+#game-container > header {
+	padding-top: env(safe-area-inset-top);
+}
+#game-container > footer {
+	padding-bottom: env(safe-area-inset-bottom);
+}
+.card {
+	transform-origin: center center;
+}
+.rules-section {
+	padding-bottom: 0.75rem;
+	border-bottom: 1px solid #4a5568;
+	margin-bottom: 0.75rem;
+}
+.rules-section:last-child {
+	border-bottom: none;
+	margin-bottom: 0;
+}
+.drawer-open {
+	transform: translateX(0) !important;
+}
+.drawer-content-area {
+	/* FIX V1.8: Changed from 60svh to 60vh */
+	height: 60vh;
+}
+.player-name {
+	color: white;
+	font-size: 1rem;
+	font-weight: 600;
+	text-align: center;
+	text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
 

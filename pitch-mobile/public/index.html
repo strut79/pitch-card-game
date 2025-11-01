@@ -11,8 +11,8 @@
 	<link rel="stylesheet" href="lobby.css">
 </head>
 
-<!-- Using 100svh via style.css to handle mobile browser bars -->
-<body class="select-none bg-gray-800 text-white">
+<!-- FIX V1.8: Changed h-full to h-screen for robust viewport height -->
+<body class="select-none bg-gray-800 text-white h-screen overflow-hidden">
 
 	<div id="auth-container"
 		class="hidden w-full h-full absolute inset-0 bg-gray-800 z-50 flex flex-col items-center justify-center">
@@ -54,7 +54,11 @@
 			class="mt-8 bg-green-600 text-white font-bold py-3 px-6 rounded-lg text-lg hidden">Start Game</button>
 	</div>
 
-	<div id="game-container" class="w-full mx-auto flex flex-col hidden">
+	<!-- 
+		FIX V1.8: Changed w-full h-full to w-full h-screen
+		This is the main container that flex-col will work inside of.
+	-->
+	<div id="game-container" class="w-full h-screen mx-auto flex flex-col hidden">
 
 		<!-- Header: Scores and Trump -->
 		<header class="flex-shrink-0 flex justify-between items-center p-2 rounded-lg bg-gray-900 bg-opacity-40 z-30">
@@ -71,22 +75,94 @@
 			</div>
 		</header>
 
-		<!-- Main Game Area -->
-		<main class="relative flex-grow">
-			<div class="w-full h-full absolute">
+		<!-- 
+			Main game area grows to fill space.
+			It's a flex container holding ONE in-flow child (player-anchor-container)
+			which will grow to fill it.
+		-->
+		<main class="relative flex-1 flex">
+			
+			<!-- 
+				Player Anchor Container
+				This is the single in-flow child (flex-1) that stretches
+				to fill <main>. All absolute player elements are
+				positioned relative to this full-size container.
+			-->
+			<div id="player-anchor-container" class="relative flex-1 z-20">
+				
+				<!-- Player 3 (Top) -->
 				<div id="player3-hand" class="absolute top-4 left-1/2 -translate-x-1/2 h-28 w-1/2 z-20"></div>
-				<div id="player3-info" class="player-name absolute top-36 left-1/2 -translate-x-1/2">Player 3</div>
+				<div id="player3-info" class="player-name absolute top-36 left-1/2 -translate-x-1/2 z-40">Player 3</div>
+				<div id="player3-status-display"
+					class="hidden absolute top-44 left-1/2 -translate-x-1/2 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-40 flex items-center gap-2">
+				</div>
+				<div id="player3-bid-display"
+					class="hidden absolute top-52 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-40">
+				</div>
+				<div id="player3-action-display"
+					class="hidden absolute top-52 left-1/2 -translate-x-1/2 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-40">
+				</div>
+
+				<!-- Player 2 (Left) -->
 				<div id="player2-hand" class="absolute left-4 top-20 w-28 h-28 sm:h-1/2 z-20"></div>
-				<div id="player2-info" class="player-name absolute left-36 top-1/2 -translate-y-1/2 -rotate-90">Player 2
+				<div id="player2-info" class="player-name absolute left-4 top-1/2 -translate-y-1/2 -rotate-90 z-40">Player 2
 				</div>
+				<div id="player2-status-display"
+					class="hidden absolute left-4 top-1/2 -translate-y-12 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-40 flex items-center gap-2">
+				</div>
+				<div id="player2-bid-display"
+					class="hidden absolute left-4 top-1/2 translate-y-4 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-40">
+				</div>
+				<div id="player2-action-display"
+					class="hidden absolute left-4 top-1/2 translate-y-4 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-40">
+				</div>
+				
+				<!-- Player 4 (Right) -->
 				<div id="player4-hand" class="absolute right-4 top-20 w-28 h-28 sm:h-1/2 z-20"></div>
-				<div id="player4-info" class="player-name absolute right-36 top-1/2 -translate-y-1/2 rotate-90">Player 4
+				<div id="player4-info" class="player-name absolute right-4 top-1/2 -translate-y-1/2 rotate-90 z-40">Player 4
 				</div>
-				<div id="player1-hand" class="absolute bottom-4 left-1/2 -translate-x-1/2 h-28 w-[90%] sm:w-1/2 z-20">
+				<div id="player4-status-display"
+					class="hidden absolute right-4 top-1/2 -translate-y-12 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-40 flex items-center gap-2">
 				</div>
-				<div id="player1-info" class="player-name absolute bottom-36 left-1/2 -translate-x-1/2">Player 1</div>
+				<div id="player4-bid-display"
+					class="hidden absolute right-4 top-1/2 translate-y-4 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-40">
+				</div>
+				<div id="player4-action-display"
+					class="hidden absolute right-4 top-1/2 translate-y-4 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-40">
+				</div>
+				
+				<!-- 
+					Player 1 (Bottom) 
+					FIX: Grouped all Player 1 elements into a single cluster.
+					This cluster is positioned from the bottom and will be moved by JS.
+					Added transition classes for the "slide" effect.
+				-->
+				<div id="player1-ui-cluster" class="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] sm:w-1/2 z-30 transition-all duration-300 ease-in-out">
+					<!-- 
+						FIX: All elements below are now positioned relative to the cluster.
+						Their 'bottom' values are reset to stack on top of each other
+						inside the new parent.
+					-->
+					<div id="player1-hand" class="absolute bottom-0 left-1/2 -translate-x-1/2 h-24 w-full z-0">
+					</div>
+					<div id="player1-info" class="player-name absolute bottom-28 left-1/2 -translate-x-1/2 z-10">Player 1</div>
+					<div id="player1-status-display"
+						class="hidden absolute bottom-36 left-1/2 -translate-x-1/2 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-10 flex items-center gap-2">
+					</div>
+					<div id="player1-bid-display"
+						class="hidden absolute bottom-44 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-10">
+					</div>
+					<div id="player1-action-display"
+						class="hidden absolute bottom-44 left-1/2 -translate-x-1/2 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-10">
+					</div>
+				</div>
 			</div>
 
+
+			<!-- 
+				Play Area (Green Circle)
+				This is 'absolute' and sits at z-10, *behind* the player container.
+			-->
 			<div id="play-area" class="absolute inset-0 flex items-center justify-center z-10">
 				<div
 					class="w-72 h-72 sm:w-80 sm:h-80 bg-green-800 bg-opacity-50 rounded-full border-4 border-yellow-900 shadow-inner grid grid-cols-3 grid-rows-3 relative">
@@ -97,47 +173,10 @@
 					<div id="player1-trick-area" class="col-start-2 row-start-3 flex justify-center items-start"></div>
 				</div>
 			</div>
-
-			<div id="player1-bid-display"
-				class="hidden absolute bottom-40 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30">
-			</div>
-			<div id="player1-status-display"
-				class="hidden absolute bottom-40 left-1/2 -translate-x-1/2 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 flex items-center gap-2">
-			</div>
-			<div id="player1-action-display"
-				class="hidden absolute bottom-48 left-1/2 -translate-x-1/2 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30">
-			</div>
-			<div id="player2-bid-display"
-				class="hidden absolute top-40 left-12 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30 sm:left-36 sm:top-1/2 sm:-translate-y-1/2">
-			</div>
-			<div id="player2-status-display"
-				class="hidden absolute top-40 left-12 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:left-36 sm:top-1/2 sm:-translate-y-1/2 flex items-center gap-2">
-			</div>
-			<div id="player2-action-display"
-				class="hidden absolute top-48 left-12 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:left-36 sm:top-1/2 sm:translate-y-8">
-			</div>
-			<div id="player3-bid-display"
-				class="hidden absolute top-40 left-1/2 -translate-x-1/2 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30">
-			</div>
-			<div id="player3-status-display"
-				class="hidden absolute top-40 left-1/2 -translate-x-1/2 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 flex items-center gap-2">
-			</div>
-			<div id="player3-action-display"
-				class="hidden absolute top-48 left-1/2 -translate-x-1/2 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30">
-			</div>
-			<div id="player4-bid-display"
-				class="hidden absolute top-40 right-12 bg-black bg-opacity-50 text-white text-lg font-bold px-4 py-1 rounded-md z-30 sm:right-36 sm:top-1/2 sm:-translate-y-1/2">
-			</div>
-			<div id="player4-status-display"
-				class="hidden absolute top-40 right-12 bg-green-700 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:right-36 sm:top-1/2 sm:-translate-y-1/2 flex items-center gap-2">
-			</div>
-			<div id="player4-action-display"
-				class="hidden absolute top-48 right-12 bg-blue-600 bg-opacity-80 text-white text-base font-semibold px-3 py-1 rounded-md z-30 sm:right-36 sm:top-1/2 sm:translate-y-8">
-			</div>
 		</main>
 
-		<!-- Action Area -->
-		<footer class="flex-shrink-0 h-32 flex flex-col items-center justify-center z-30 relative pt-2">
+		<!-- Footer / Action Area -->
+		<footer class="flex-shrink-0 h-28 flex flex-col items-center justify-center z-30 relative pt-2">
 			<div id="message-box"
 				class="hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 rounded-lg shadow-lg w-max max-w-sm text-center bg-gray-900 bg-opacity-80">
 				<p id="message-text" class="text-center"></p>
@@ -152,8 +191,10 @@
 						Selected</button>
 				</div>
 			</div>
-			<div class="w-full px-4 pb-1 flex justify-between items-center">
+			<!-- FIX: Incremented version number -->
+			<div class="w-full px-4 flex justify-between items-center">
 				<button id="full-reset-button" class="text-xs py-1 px-2 bg-red-800 rounded">Reset All</button>
+				<span class="text-xs text-gray-600">v1.8</span>
 				<button id="rules-button" class="text-sm py-1 px-3 bg-gray-700 rounded-lg hover:bg-gray-600">Game
 					Rules</button>
 			</div>
@@ -196,7 +237,7 @@
 							the
 							trump suit.</li>
 						<li><strong>Discarding:</strong> All players discard cards to get down to a hand of 6 or fewer
-							cards, then draw back up to 6. The bidder (with 14 cards) must discard at least 8. Other
+							cards, then draw back to 6. The bidder (with 14 cards) must discard at least 8. Other
 							players
 							(with 7 cards) must discard at least 1.</li>
 						<li><strong>Playing Tricks:</strong> The high bidder leads the first trick. The winner of each
@@ -244,8 +285,9 @@
 						following:</p>
 					<ul class="list-disc list-inside space-y-1">
 						<li><strong>High:</strong> Capturing the highest trump card played in the round.</li>
-						<!-- CHANGED: Updated 'Low' rule text to match Rule #3 -->
-						<li><strong>Low:</strong> The team that *plays* the lowest trump card of the round gets this point (even if they don't win the trick).</li>
+						<li><strong>Low:</strong> The team that *plays* the lowest trump card of the round gets this
+							point
+							(even if they don't win the trick).</li>
 						<li><strong>Jack:</strong> Capturing the Jack of the trump suit.</li>
 						<li><strong>Off-Jack:</strong> Capturing the Jack of the same color as trump.</li>
 						<li><strong>Joker:</strong> One point for each Joker captured.</li>
@@ -255,7 +297,9 @@
 					<p class="font-bold text-red-400 mt-2"><strong>Making the Bid:</strong> If the bidding team scores
 						at
 						least as many points as their bid, they get all the points they earned. If they fail, their bid
-						amount is <strong>subtracted</strong> from their total score, and the opposing team scores any points they won.</p>
+						amount is <strong>subtracted</strong> from their total score. The non-bidding team always keeps
+						any
+						points they earn.</p>
 				</div>
 			</div>
 		</div>
@@ -284,7 +328,8 @@
 		</div>
 		<div class="mt-4 text-center">
 			<h4 class="text-sm font-semibold text-gray-300 mb-2">Remaining Cards in Deck</h4>
-			<div id="remaining-deck-display" class="relative h-24 flex justify-center items-center">
+			<div id="remaining-deck-display"
+				class="relative min-h-24 max-w-2xl flex justify-center items-center flex-wrap gap-1 p-2">
 			</div>
 		</div>
 		<button id="next-round-button" class="py-2 px-6 bg-blue-600 rounded-lg shadow-lg mt-4">Next Round</button>
