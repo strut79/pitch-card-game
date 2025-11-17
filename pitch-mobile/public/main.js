@@ -8,7 +8,7 @@ import {
   signInWithPopup,
   signInAnonymously,
   onAuthStateChanged,
-  signOut, // FIX: Import signOut
+  signOut,
 } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 
 // Import Firestore METHODS from the Firebase CDN
@@ -31,7 +31,6 @@ import {
   WIDOW_SIZE,
   WINNING_SCORE,
   suits,
-  // FIX: Removed unused 'cardSymbols' import
   isTrumpCard,
   isProtectedCard,
   getEffectiveSuit,
@@ -61,8 +60,8 @@ import {
   updatePointDrawers,
   updateUI,
   showGameOver,
-  hideGameOver, // FIX: Import hideGameOver
-  isRoundSummaryVisible, // FIX: Import isRoundSummaryVisible
+  hideGameOver,
+  isRoundSummaryVisible,
   showAuthContainer,
   hideAuthContainer,
   showLobby,
@@ -74,7 +73,6 @@ import {
 import { initLobby, renderLobby } from "./lobby.js";
 
 // --- LOCAL TEST TOGGLE ---
-// FIX: Set to true for Firebase deployment
 const USE_FIREBASE = true;
 console.log("main.js executed");
 
@@ -90,16 +88,14 @@ const mockCreateGame = async (gameData) => {
 const mockOnGameUpdate = (gameId, callback) => {
   console.log("MOCK: onGameUpdate (storing callback)");
   mockGameUpdateCallback = callback;
-  // Fire initial state
   setTimeout(() => mockGameUpdateCallback(mockGameData), 0);
   return () => {
     mockGameUpdateCallback = () => {};
-  }; // Return an unsubscribe function
+  };
 };
 const mockUpdateGame = async (gameId, partialGameData) => {
   console.log("MOCK: updateGame (merging data and triggering callback)");
   mockGameData = { ...mockGameData, ...partialGameData };
-  // Trigger the listener
   setTimeout(() => mockGameUpdateCallback(mockGameData), 0);
 };
 const mockLogin = async (handler) => {
@@ -172,24 +168,19 @@ function handleAuthChange(user) {
       joinGame(urlGameId);
     } else {
       console.log("No game in URL, creating/showing lobby.");
-      // We're not in a game yet, so create a new local lobby state
       const newLobbyData = createNewGame(currentUser);
       if (USE_FIREBASE) {
-        // This path is for "create new game" online
         showLobby();
         initLobby(null, currentUser, createNewGame, createGame, updateGame);
         renderLobby(newLobbyData, currentUser);
       } else {
-        // This path is for local mode
         mockGameData = newLobbyData;
         gameId = "local-game";
         initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
-        // Directly subscribe to the mock game
         unsubscribeFromGame = mockOnGameUpdate(gameId, handleStateChanges);
       }
     }
   } else {
-    // FIX: This is what shows the login screen.
     console.log("User is not logged in.");
     currentUser = null;
     showAuthContainer();
@@ -202,7 +193,7 @@ function handleAuthChange(user) {
 // --- Game Logic: Core ---
 
 const joinGame = async (id) => {
-  if (!USE_FIREBASE) return; // Should not be called in local mode
+  if (!USE_FIREBASE) return; 
 
   gameId = id;
 
@@ -212,7 +203,6 @@ const joinGame = async (id) => {
   if (!gameSnap.exists()) {
     console.error("Game not found!");
     window.history.replaceState(null, null, window.location.pathname);
-    // Show a fresh lobby
     const newLobbyData = createNewGame(currentUser);
     showLobby();
     initLobby(null, currentUser, createNewGame, createGame, updateGame);
@@ -238,54 +228,70 @@ const joinGame = async (id) => {
   }
 
   initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
-
-  // Subscribe to game updates
   unsubscribeFromGame = onGameUpdate(gameId, handleStateChanges);
 };
 
-// FIX: This is for the "Reset All" button. It now performs a real signOut.
+// This is for the "Reset All" button. It performs a real signOut.
 const resetGame = async () => {
   console.log("Resetting game (signing out)...");
   if (unsubscribeFromGame) unsubscribeFromGame();
   
   await signOut(auth);
   
-  // Clear local state
   gameData = {};
   oldPhase = "";
   isMakingMove = false;
   selectedDiscards = [];
   gameId = null;
-  
-  // The onAuthStateChanged listener will handle all UI changes.
 };
 
-// FIX: This is for the "Play Again" button
+// FIX: This is the new, simpler logic for the "Play Again" button
 const handlePlayAgain = () => {
-  if (gameData.hostId !== currentUser.uid) {
-    showMessage("Waiting for host to start a new game...");
-    return;
-  }
+    if (gameData.hostId !== currentUser.uid) {
+        showMessage("Waiting for host to start a new game...");
+        return;
+    }
+    
+    console.log("Host is resetting game to lobby...");
 
-  console.log("Host is starting a new game...");
+    // Just reset the game object to a clean lobby state.
+    // This is much more reliable than createNewGame().
+    const players = gameData.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        isOnline: p.id === currentUser.uid,
+        isAI: p.isAI,
+        team: null
+    }));
 
-  // Create a fresh lobby state, but re-use player names/IDs
-  const newLobbyData = createNewGame(currentUser);
-  newLobbyData.players = gameData.players.map((p) => ({
-    id: p.id,
-    name: p.name,
-    isOnline: p.id === currentUser.uid, // Host is online
-    isAI: p.isAI,
-    team: null, // Reset teams
-  }));
-
-  // Hide UI overlays
-  hideGameOver();
-  hideRoundSummary();
-
-  // Update the existing game document to the new lobby state
-  // onGameUpdate will handle the rest
-  updateGame(gameId, newLobbyData);
+    const resetData = {
+        phase: "lobby",
+        players: players,
+        teams: [
+            { id: "team1", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [], cardValue: 0 },
+            { id: "team2", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [], cardValue: 0 }
+        ],
+        deck: [],
+        widow: [],
+        turnIndex: 0,
+        dealerIndex: -1,
+        highBid: 0,
+        highBidderIndex: -1,
+        bidsMade: 0,
+        trumpSuit: null,
+        currentTrick: [],
+        trickLeadPlayerIndex: -1,
+        tricksPlayed: 0,
+        lastRoundResults: null
+    };
+    
+    // Hide overlays locally first
+    hideGameOver();
+    hideRoundSummary();
+    
+    // Push the reset state to Firebase.
+    // onSnapshot will see "phase: lobby" and do the rest.
+    updateGame(gameId, resetData);
 };
 
 const startNewRound = () => {
@@ -299,7 +305,7 @@ const startNewRound = () => {
     player.hasBid = false;
   });
 
-  dealCards(gameData); // dealCards handles deck creation, shuffle, hand reset
+  dealCards(gameData);
 
   gameData.teams.forEach((team) => {
     team.roundPoints = 0;
@@ -317,7 +323,7 @@ const startNewRound = () => {
   gameData.trumpSuit = null;
   gameData.currentTrick = [];
   gameData.tricksPlayed = 0;
-  gameData.lastRoundResults = null; // FIX: Reset this
+  gameData.lastRoundResults = null;
 
   updateGame(gameId, gameData);
 };
@@ -371,7 +377,6 @@ const checkTrickWinner = () => {
     if (winnerTeam) {
       winnerTeam.cardsWon.push(...trick);
 
-      // --- FIX: Live point calculation ---
       let roundPointsWonThisTrick = 0;
       let cardValueWonThisTrick = 0;
       const trumpSuit = gameData.trumpSuit;
@@ -387,7 +392,6 @@ const checkTrickWinner = () => {
         const isJoker = card.value === "Joker";
 
         if (isJack || isOffJack || isJoker) {
-          // Add to pointCards if it's not already there
           if (!winnerTeam.pointCards.some((pc) => pc.id === card.id)) {
             winnerTeam.pointCards.push(card);
             roundPointsWonThisTrick++;
@@ -397,7 +401,6 @@ const checkTrickWinner = () => {
 
       winnerTeam.roundPoints += roundPointsWonThisTrick;
       winnerTeam.cardValue += cardValueWonThisTrick;
-      // --- End of FIX ---
     }
 
     gameData.currentTrick = [];
@@ -417,7 +420,6 @@ const calculateTeamPoints = () => {
   const biddingTeam = teams.find((t) => t.players.includes(bidder.id));
   const otherTeam = teams.find((t) => !t.players.includes(bidder.id));
 
-  // FIX: Reset only the point *badges* (isHigh, isLow) on cards, not the whole array
   teams.forEach((t) => {
     t.pointCards.forEach((c) => {
       c.isHigh = false;
@@ -425,14 +427,11 @@ const calculateTeamPoints = () => {
     });
   });
 
-  // 1. Calculate Card Value totals ("Game" point)
-  // FIX: Read directly from the summed cardValue property
   const cardValueTotals = {
     [biddingTeam.id]: biddingTeam.cardValue,
     [otherTeam.id]: otherTeam.cardValue,
   };
 
-  // 2. Find all cards that were ACTUALLY IN PLAY (i.e., captured in tricks)
   const allCardsPlayed = [...teams[0].cardsWon, ...teams[1].cardsWon];
   const allTrumpsPlayed = allCardsPlayed
     .filter((c) => isTrumpCard(c, trumpSuit))
@@ -444,26 +443,21 @@ const calculateTeamPoints = () => {
     lowTrump = allTrumpsPlayed[0];
   }
 
-  // 3. Define the point cards we're looking for (ONLY High and Low)
-  // FIX: Removed Jack, Off-Jack, and Jokers as they are calculated live
   const pointCardDefinitions = [
     { name: "High", card: highTrump },
     { name: "Low", card: lowTrump },
   ];
 
-  // 4. Award points for High, Low
   pointCardDefinitions.forEach(({ name, card }) => {
-    if (!card) return; // Card wasn't in play
+    if (!card) return;
 
     let teamToAward;
     if (name === "Low") {
-      // Special "Low" rule: point goes to the team that PLAYED it
       const playerWhoPlayedLow = players.find((p) => p.id === card.player);
       teamToAward = playerWhoPlayedLow
         ? teams.find((t) => t.players.includes(playerWhoPlayedLow.id))
         : null;
     } else {
-      // Standard rule: point goes to the team that CAPTURED it
       teamToAward = biddingTeam.cardsWon.some((c) => c.id === card.id)
         ? biddingTeam
         : otherTeam.cardsWon.some((c) => c.id === card.id)
@@ -473,14 +467,11 @@ const calculateTeamPoints = () => {
 
     if (teamToAward) {
       teamToAward.roundPoints++;
-      // Add badge info for UI
-      // Check if card is already in the array from live update (e.g., Low Joker)
       let cardInArray = teamToAward.pointCards.find((c) => c.id === card.id);
       if (cardInArray) {
         if (name === "High") cardInArray.isHigh = true;
         if (name === "Low") cardInArray.isLow = true;
       } else {
-        // Card wasn't a J/OJ/Joker, so add it now
         const cardForDisplay = { ...card };
         if (name === "High") cardForDisplay.isHigh = true;
         if (name === "Low") cardForDisplay.isLow = true;
@@ -489,21 +480,16 @@ const calculateTeamPoints = () => {
     }
   });
 
-  // 5. Award "Game" point
   if (cardValueTotals[biddingTeam.id] > cardValueTotals[otherTeam.id]) {
     biddingTeam.roundPoints++;
   } else if (cardValueTotals[otherTeam.id] > cardValueTotals[biddingTeam.id]) {
     otherTeam.roundPoints++;
   }
-  // Note: No point for a tie in "Game"
 
-  // 6. Check if bidder made their bid
   if (biddingTeam.roundPoints < highBid) {
-    biddingTeam.roundPoints = -highBid; // Bidder is set
+    biddingTeam.roundPoints = -highBid;
   }
-  // The non-bidding team (otherTeam) keeps whatever points they made.
 
-  // 7. Return summary
   return {
     team1: {
       total: teams[0].roundPoints,
@@ -542,9 +528,9 @@ const handleTrumpSelection = (suit) => {
   gameData.trumpSuit = suit;
 
   gameData.phase = "discarding";
-  gameData.turnIndex = 0; // Start discard phase from first player
+  gameData.turnIndex = 0; 
   gameData.discardsMade = 0;
-  gameData.players.forEach((p) => (p.hasDiscarded = false)); // Reset for new phase
+  gameData.players.forEach((p) => (p.hasDiscarded = false));
   updateGame(gameId, gameData).finally(() => {
     isMakingMove = false;
   });
@@ -649,7 +635,7 @@ const handleCardPlay = (card) => {
   }
 
   player.hand = player.hand.filter((c) => c.id !== card.id);
-  card.player = player.id; // <-- Set the player ID on the card
+  card.player = player.id;
   gameData.currentTrick.push(card);
   if (gameData.currentTrick.length === 1) {
     gameData.trickLeadPlayerIndex = gameData.turnIndex;
@@ -828,17 +814,15 @@ const aiAction = () => {
 
       let cardToPlay;
       if (!leadCard) {
-        // Leading the trick
         const sortedPlays = [...legalPlays].sort((a, b) => {
           const aValue =
             (isTrumpCard(a, trumpSuit) ? 100 : 0) + getCardRank(a, trumpSuit);
           const bValue =
             (isTrumpCard(b, trumpSuit) ? 100 : 0) + getCardRank(b, trumpSuit);
-          return bValue - aValue; // Play highest card
+          return bValue - aValue;
         });
         cardToPlay = sortedPlays[0];
       } else {
-        // Following suit
         const winningCardInTrick = gameData.currentTrick.reduce(
           (best, current) => {
             const effectiveBestSuit = getEffectiveSuit(best, trumpSuit);
@@ -865,12 +849,10 @@ const aiAction = () => {
         );
 
         if (canWinCards.length > 0) {
-          // Play lowest winning card
           cardToPlay = canWinCards.sort(
             (a, b) => getCardRank(a, trumpSuit) - getCardRank(b, trumpSuit)
           )[0];
         } else {
-          // Can't win, play lowest card
           cardToPlay = legalPlays.sort(
             (a, b) => getCardRank(a, trumpSuit) - getCardRank(b, trumpSuit)
           )[0];
@@ -885,7 +867,7 @@ const aiAction = () => {
       const cardIndex = player.hand.findIndex((c) => c.id === cardToPlay.id);
       player.hand.splice(cardIndex, 1);
 
-      cardToPlay.player = player.id; // <-- Set the player ID on the card
+      cardToPlay.player = player.id;
       gameData.currentTrick.push(cardToPlay);
       if (gameData.currentTrick.length === 1) {
         gameData.trickLeadPlayerIndex = gameData.turnIndex;
@@ -904,9 +886,6 @@ const handleStateChanges = (newGameData) => {
   gameData = newGameData;
 
   if (!gameData || !gameData.phase) {
-    console.log("No game data or phase, returning to lobby.");
-    // Don't call resetGame() here, as that logs the user out.
-    // The auth listener will handle showing the auth screen if needed.
     return;
   }
 
@@ -915,7 +894,7 @@ const handleStateChanges = (newGameData) => {
     if (oldPhase !== "lobby") {
       console.log("State Change: Entering Lobby");
       hideGame();
-      hideGameOver(); // FIX: Hide overlays when returning to lobby
+      hideGameOver();
       hideRoundSummary();
       showLobby();
     }
@@ -930,7 +909,7 @@ const handleStateChanges = (newGameData) => {
         handleBid,
         handleTrumpSelection,
         handleDiscard,
-        handlePlayAgain, // FIX: Pass handlePlayAgain
+        // FIX: Remove handlePlayAgain from here
         startNewRound,
         currentUser
       );
@@ -940,13 +919,12 @@ const handleStateChanges = (newGameData) => {
   // --- In-Game UI Updates ---
   if (gameData.phase !== "lobby") {
     if (!uiHelpers) {
-      // Failsafe if uiHelpers aren't set yet (e.g., joining mid-game)
       uiHelpers = initUI(
         handleCardClick,
         handleBid,
         handleTrumpSelection,
         handleDiscard,
-        handlePlayAgain, // FIX: Pass handlePlayAgain
+        // FIX: Remove handlePlayAgain from here
         startNewRound,
         currentUser
       );
@@ -978,7 +956,6 @@ const handleStateChanges = (newGameData) => {
     ...gameData.players.slice(0, playerIndex),
   ];
 
-  // Clear all action messages at the start of every state change
   clearAllActionMessages();
 
   switch (gameData.phase) {
@@ -1000,15 +977,11 @@ const handleStateChanges = (newGameData) => {
         break;
       }
 
-      // Show generic message
       showMessage(`${currentPlayer.name}'s turn to bid.`);
-
-      // Show specific action prompt
-      const reorderedBiddingIndex = reorderedPlayers.findIndex(
-        (p) => p.id === currentPlayer.id
-      );
+      
+      const reorderedBiddingIndex = reorderedPlayers.findIndex((p) => p.id === currentPlayer.id);
       if (reorderedBiddingIndex !== -1) {
-        displayActionMessage(reorderedBiddingIndex, "Turn to bid");
+          displayActionMessage(reorderedBiddingIndex, "Turn to bid");
       }
 
       if (isPlayerTurn) {
@@ -1023,7 +996,6 @@ const handleStateChanges = (newGameData) => {
       showMessage(`${bidderForWidow.name} takes the widow...`, 1500);
       if (currentUser.uid === gameData.hostId) {
         setTimeout(() => {
-          // Use originalHand for scoring, but hand for playing
           bidderForWidow.originalHand.push(...gameData.widow);
           bidderForWidow.hand.push(...gameData.widow);
           gameData.widow = [];
@@ -1035,17 +1007,14 @@ const handleStateChanges = (newGameData) => {
 
     case "trumpSelection":
       const bidder = gameData.players[gameData.highBidderIndex];
-      const reorderedBidderIndex = reorderedPlayers.findIndex(
-        (p) => p.id === bidder.id
-      );
-
-      // Use action display
+      const reorderedBidderIndex = reorderedPlayers.findIndex((p) => p.id === bidder.id);
+      
       if (reorderedBidderIndex !== -1) {
-        displayActionMessage(reorderedBidderIndex, "Choosing trump...");
+          displayActionMessage(reorderedBidderIndex, "Choosing trump...");
       } else {
-        showMessage(`${bidder.name} is choosing trump...`);
+          showMessage(`${bidder.name} is choosing trump...`);
       }
-
+      
       if (bidder.id === currentUser.uid) {
         isMakingMove = false;
         renderTrumpSelection(handleTrumpSelection);
@@ -1077,9 +1046,7 @@ const handleStateChanges = (newGameData) => {
       }
 
       const currentPlayerToDiscard = gameData.players[gameData.turnIndex];
-      const reorderedDiscarderIndex = reorderedPlayers.findIndex(
-        (p) => p.id === currentPlayerToDiscard.id
-      );
+      const reorderedDiscarderIndex = reorderedPlayers.findIndex((p) => p.id === currentPlayerToDiscard.id);
 
       if (currentPlayerToDiscard.id === currentUser.uid) {
         const isBidder =
@@ -1087,8 +1054,7 @@ const handleStateChanges = (newGameData) => {
         const minDiscards = isBidder
           ? currentPlayerToDiscard.hand.length - FINAL_HAND_SIZE
           : CARDS_DEALT - FINAL_HAND_SIZE;
-
-        // Use a prompt *and* a message
+        
         showMessage(
           `You must select at least ${minDiscards} cards to discard.`
         );
@@ -1096,9 +1062,9 @@ const handleStateChanges = (newGameData) => {
         isMakingMove = false;
       } else {
         if (reorderedDiscarderIndex !== -1) {
-          displayActionMessage(reorderedDiscarderIndex, "Discarding...");
+            displayActionMessage(reorderedDiscarderIndex, "Discarding...");
         } else {
-          showMessage(`${currentPlayerToDiscard.name} is discarding...`);
+            showMessage(`${currentPlayerToDiscard.name} is discarding...`);
         }
         if (currentPlayerToDiscard.isAI) {
           aiAction();
@@ -1108,20 +1074,19 @@ const handleStateChanges = (newGameData) => {
 
     case "playing":
       if (gameData.currentTrick.length === PLAYER_COUNT) {
-        isMakingMove = true; // Prevent actions while trick winner is being decided
+        isMakingMove = true;
         checkTrickWinner();
       } else {
         const reorderedPlayerIndex = reorderedPlayers.findIndex(
           (p) => p.id === currentPlayer.id
         );
-
-        // Use action display
+        
         if (reorderedPlayerIndex !== -1) {
-          displayActionMessage(reorderedPlayerIndex, "Turn to play");
+            displayActionMessage(reorderedPlayerIndex, "Turn to play");
         } else {
-          showMessage(`${currentPlayer.name}'s turn to play.`);
+            showMessage(`${currentPlayer.name}'s turn to play.`);
         }
-
+        
         if (isPlayerTurn) {
           isMakingMove = false;
         } else if (currentPlayer.isAI) {
@@ -1134,14 +1099,12 @@ const handleStateChanges = (newGameData) => {
       isMakingMove = true;
       showMessage("Round over! Calculating scores...", 2000);
 
-      // FIX: Host calculates, saves results, and moves phase.
       if (currentUser.uid === gameData.hostId) {
         setTimeout(() => {
           const results = calculateTeamPoints();
           gameData.teams[0].score += results.team1.total;
           gameData.teams[1].score += results.team2.total;
 
-          // FIX: Save results to gameData
           gameData.lastRoundResults = results;
 
           if (
@@ -1161,7 +1124,6 @@ const handleStateChanges = (newGameData) => {
       isMakingMove = false;
       hideMessage();
 
-      // FIX: New, more robust check for showing summary
       if (gameData.lastRoundResults && !isRoundSummaryVisible()) {
         displayRoundResults(
           gameData.lastRoundResults,
@@ -1175,7 +1137,6 @@ const handleStateChanges = (newGameData) => {
     case "gameOver":
       isMakingMove = true;
 
-      // FIX: New, more robust check for showing summary
       if (gameData.lastRoundResults && !isRoundSummaryVisible()) {
         displayRoundResults(
           gameData.lastRoundResults,
@@ -1188,7 +1149,7 @@ const handleStateChanges = (newGameData) => {
       break;
   }
 
-  oldPhase = gameData.phase; // Update oldPhase at the end
+  oldPhase = gameData.phase;
 };
 
 // --- DOMContentLoaded ---
@@ -1201,7 +1162,9 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("login-anonymous")
     .addEventListener("click", handleAnonymousLogin);
 
-  // FIX: Wire "Play Again" to handlePlayAgain, "Reset All" to resetGame
+  // FIX: This is the single source of truth for these buttons.
+  // "Play Again" (on game over screen) -> handlePlayAgain
+  // "Reset All" (in footer) -> resetGame
   document
     .getElementById("play-again-button")
     .addEventListener("click", handlePlayAgain);
@@ -1214,7 +1177,6 @@ document.addEventListener("DOMContentLoaded", () => {
     onAuthStateChanged(auth, handleAuthChange);
   } else {
     console.log("Firebase DISABLED. Running in local test mode.");
-    // Bypassing auth and starting lobby immediately
     mockLogin(handleAuthChange);
   }
 });

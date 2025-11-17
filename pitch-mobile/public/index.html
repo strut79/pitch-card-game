@@ -60,7 +60,6 @@
 	<div id="game-container" class="w-full h-full mx-auto flex flex-col hidden">
 
 		<!-- Header: Scores and Trump -->
-		<!-- FIX: Removed the center trump display and w-1/3 from side divs -->
 		<header class="flex-shrink-0 flex justify-between items-center p-2 rounded-lg bg-gray-900 bg-opacity-40 z-30">
 			<div class="text-left">
 				<h2 class="text-lg font-semibold">Opponents: <span id="team2-points-display"
@@ -76,16 +75,11 @@
 
 		<!-- 
 			Main game area grows to fill space.
-			It's a flex container holding ONE in-flow child (player-anchor-container)
-			which will grow to fill it.
 		-->
 		<main class="relative flex-1 flex">
 			
 			<!-- 
 				Player Anchor Container
-				This is the single in-flow child (flex-1) that stretches
-				to fill <main>. All absolute player elements are
-				positioned relative to this full-size container.
 			-->
 			<div id="player-anchor-container" class="relative flex-1 z-20">
 				
@@ -132,16 +126,8 @@
 				
 				<!-- 
 					Player 1 (Bottom) 
-					FIX: Grouped all Player 1 elements into a single cluster.
-					This cluster is positioned from the bottom and will be moved by JS.
-					Added transition classes for the "slide" effect.
 				-->
 				<div id="player1-ui-cluster" class="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] sm:w-1/2 z-30 transition-all duration-300 ease-in-out">
-					<!-- 
-						FIX: All elements below are now positioned relative to the cluster.
-						Their 'bottom' values are reset to stack on top of each other
-						inside the new parent.
-					-->
 					<div id="player1-hand" class="absolute bottom-0 left-1/2 -translate-x-1/2 h-24 w-full z-0">
 					</div>
 					<div id="player1-info" class="player-name absolute bottom-28 left-1/2 -translate-x-1/2 z-10">Player 1</div>
@@ -160,7 +146,6 @@
 
 			<!-- 
 				Play Area (Green Circle)
-				This is 'absolute' and sits at z-10, *behind* the player container.
 			-->
 			<div id="play-area" class="absolute inset-0 flex items-center justify-center z-10">
 				<div
@@ -190,11 +175,10 @@
 						Selected</button>
 				</div>
 			</div>
-			<!-- FIX: Add version number -->
 			<div class="w-full px-4 flex justify-between items-center">
 				<button id="full-reset-button" class="text-xs py-1 px-2 bg-red-800 rounded">Reset All</button>
 				<!-- FIX: Updated version number for verification -->
-				<span class="text-xs text-gray-600">v1.12</span>
+				<span class="text-xs text-gray-600">v1.13</span>
 				<button id="rules-button" class="text-sm py-1 px-3 bg-gray-700 rounded-lg hover:bg-gray-600">Game
 					Rules</button>
 			</div>
@@ -205,7 +189,6 @@
 	<div id="rules-overlay"
 		class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-lg w-full max-w-3xl max-h-[90%] flex flex-col text-gray-300">
-			<!-- Sticky Header -->
 			<div
 				class="flex-shrink-0 flex justify-between items-center p-4 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
 				<h2 class="text-2xl font-bold text-yellow-300">Pitch: Game Rules</h2>
@@ -213,7 +196,6 @@
 					class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
 			</div>
 
-			<!-- Scrollable Content -->
 			<div class="overflow-y-auto p-6">
 				<div class="rules-section">
 					<h3 class="text-lg font-semibold text-white mb-2">Objective</h3>
