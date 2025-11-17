@@ -11,8 +11,8 @@
 	<link rel="stylesheet" href="lobby.css">
 </head>
 
-<!-- FIX V1.8: Changed h-full to h-screen for robust viewport height -->
-<body class="select-none bg-gray-800 text-white h-screen overflow-hidden">
+<!-- FIX: Changed h-screen to h-svh (small viewport height) to respect browser UI -->
+<body class="select-none bg-gray-800 text-white h-svh overflow-hidden">
 
 	<div id="auth-container"
 		class="hidden w-full h-full absolute inset-0 bg-gray-800 z-50 flex flex-col items-center justify-center">
@@ -55,10 +55,9 @@
 	</div>
 
 	<!-- 
-		FIX V1.8: Changed w-full h-full to w-full h-screen
-		This is the main container that flex-col will work inside of.
+		FIX: Changed h-screen to h-full to make it fill its parent (the h-svh body)
 	-->
-	<div id="game-container" class="w-full h-screen mx-auto flex flex-col hidden">
+	<div id="game-container" class="w-full h-full mx-auto flex flex-col hidden">
 
 		<!-- Header: Scores and Trump -->
 		<!-- FIX: Removed the center trump display and w-1/3 from side divs -->
