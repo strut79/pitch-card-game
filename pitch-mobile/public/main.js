@@ -1120,6 +1120,7 @@ const handleStateChanges = (newGameData) => {
       hideMessage();
       
       // FIX: All players now check for results and display them
+      // FIX: Removed the host-only cleanup block that caused the race condition
       if (gameData.lastRoundResults && oldPhase === "scoring") {
         displayRoundResults(
           gameData.lastRoundResults,
@@ -1127,10 +1128,6 @@ const handleStateChanges = (newGameData) => {
           uiHelpers.createCardElement,
           currentUser
         );
-        // Host cleans up the results property
-        if (currentUser.uid === gameData.hostId) {
-            updateGame(gameId, { lastRoundResults: null });
-        }
       }
       break;
 
