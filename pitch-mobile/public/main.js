@@ -71,7 +71,8 @@ import {
 import { initLobby, renderLobby } from "./lobby.js";
 
 // --- LOCAL TEST TOGGLE ---
-const USE_FIREBASE = true;
+// FIX: Set to true for Firebase deployment
+const USE_FIREBASE = true; 
 console.log("main.js executed");
 
 // --- MOCK FUNCTIONS (for local testing) ---
@@ -1176,5 +1177,4 @@ document.addEventListener("DOMContentLoaded", () => {
     mockLogin(handleAuthChange);
   }
 });
-
 
