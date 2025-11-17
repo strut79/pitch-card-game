@@ -277,7 +277,7 @@ const startNewRound = () => {
     team.roundPoints = 0;
     team.cardsWon = [];
     team.pointCards = [];
-    team.cardValue = 0; // FIX: Reset cardValue
+    team.cardValue = 0; 
   });
 
   gameData.phase = "bidding";
@@ -289,6 +289,7 @@ const startNewRound = () => {
   gameData.trumpSuit = null;
   gameData.currentTrick = [];
   gameData.tricksPlayed = 0;
+  gameData.lastRoundResults = null; // FIX: Reset this
 
   updateGame(gameId, gameData);
 };
@@ -1090,18 +1091,16 @@ const handleStateChanges = (newGameData) => {
     case "scoring":
       isMakingMove = true;
       showMessage("Round over! Calculating scores...", 2000);
+      
+      // FIX: Host calculates, saves results, and moves phase.
       if (currentUser.uid === gameData.hostId) {
         setTimeout(() => {
           const results = calculateTeamPoints();
           gameData.teams[0].score += results.team1.total;
           gameData.teams[1].score += results.team2.total;
 
-          displayRoundResults(
-            results,
-            gameData,
-            uiHelpers.createCardElement,
-            currentUser
-          );
+          // FIX: Save results to gameData
+          gameData.lastRoundResults = results; 
 
           if (
             gameData.teams[0].score >= WINNING_SCORE ||
@@ -1119,10 +1118,34 @@ const handleStateChanges = (newGameData) => {
     case "roundEnd":
       isMakingMove = false;
       hideMessage();
+      
+      // FIX: All players now check for results and display them
+      if (gameData.lastRoundResults && oldPhase === "scoring") {
+        displayRoundResults(
+          gameData.lastRoundResults,
+          gameData,
+          uiHelpers.createCardElement,
+          currentUser
+        );
+        // Host cleans up the results property
+        if (currentUser.uid === gameData.hostId) {
+            updateGame(gameId, { lastRoundResults: null });
+        }
+      }
       break;
 
     case "gameOver":
       isMakingMove = true;
+      
+      // FIX: All players also show final round results
+      if (gameData.lastRoundResults && oldPhase === "scoring") {
+         displayRoundResults(
+          gameData.lastRoundResults,
+          gameData,
+          uiHelpers.createCardElement,
+          currentUser
+        );
+      }
       showGameOver(gameData, currentUser);
       break;
   }
@@ -1156,4 +1179,5 @@ document.addEventListener("DOMContentLoaded", () => {
     mockLogin(handleAuthChange);
   }
 });
+
 
