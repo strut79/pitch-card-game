@@ -5,7 +5,7 @@ import { dealCards, createNewGame } from "./game.js";
 let gameData;
 let currentUser;
 let gameId;
-let createAndStartGameCallback;
+// FIX: Removed createAndStartGameCallback
 let updateGameCallback;
 let createNewGameCallback;
 
@@ -58,34 +58,25 @@ export const renderLobby = (newGameData, user) => {
 
 const handleTeamSelection = async (teamId) => {
   console.log("handleTeamSelection", teamId, "gameId:", gameId);
-  if (!gameId) {
-    // First move, create the game
-    // FIX: Use the passed-in createNewGame function
-    const newGameData = createNewGameCallback(currentUser);
-    newGameData.players[0].team = teamId;
-    gameData = newGameData; // Set local state for callbacks
-    if (createAndStartGameCallback) {
-      // This will set up the main.js listener and trigger the first update
-      await createAndStartGameCallback(gameData);
-    }
+  // FIX: Removed the entire if (!gameId) block.
+  // main.js now ensures gameId is *always* valid here.
+
+  // Game already exists, just update it
+  const player = gameData.players.find((p) => p.id === currentUser.uid);
+  if (player) {
+    player.team = teamId;
+    // FIX: Use the passed-in updateGame callback
+    await updateGameCallback(gameId, { players: gameData.players });
   } else {
-    // Game already exists, just update it
-    const player = gameData.players.find((p) => p.id === currentUser.uid);
-    if (player) {
-      player.team = teamId;
-      // FIX: Use the passed-in updateGame callback
-      await updateGameCallback(gameId, { players: gameData.players });
-    } else {
-      // FIX: Handle joining a game (player not in list yet)
-      const newPlayer = {
-        id: currentUser.uid,
-        name: currentUser.displayName || "New Player",
-        isOnline: true,
-        team: teamId,
-      };
-      gameData.players.push(newPlayer);
-      await updateGameCallback(gameId, { players: gameData.players });
-    }
+    // FIX: Handle joining a game (player not in list yet)
+    const newPlayer = {
+      id: currentUser.uid,
+      name: currentUser.displayName || "New Player",
+      isOnline: true,
+      team: teamId,
+    };
+    gameData.players.push(newPlayer);
+    await updateGameCallback(gameId, { players: gameData.players });
   }
 };
 
@@ -142,14 +133,14 @@ export const initLobby = (
   id,
   user,
   newGameFunc,
-  createGameFunc,
+  // FIX: Removed createGameFunc
   updateGameFunc
 ) => {
   console.log("initLobby called");
-  gameId = id; // This might be null initially
+  gameId = id; // This will now always be a valid ID
   currentUser = user;
   createNewGameCallback = newGameFunc;
-  createAndStartGameCallback = createGameFunc;
+  // FIX: Removed createAndStartGameCallback
   updateGameCallback = updateGameFunc;
 
   // Get elements ONCE and add listeners
@@ -167,7 +158,5 @@ export const initLobby = (
     .getElementById("team2")
     .addEventListener("click", () => handleTeamSelection(2));
   startGameButton.addEventListener("click", handleStartGame);
-
-  // FIX: No listener here. main.js handles listeners.
 };
 

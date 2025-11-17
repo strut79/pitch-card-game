@@ -154,7 +154,8 @@ let gameId = null;
 let unsubscribeFromGame = () => {}; // To store the onSnapshot unsub function
 
 // --- Auth ---
-function handleAuthChange(user) {
+// FIX: Made handleAuthChange async to support awaiting createGame
+async function handleAuthChange(user) {
   console.log("handleAuthChange called");
   if (user) {
     console.log("User is logged in:", user);
@@ -163,17 +164,42 @@ function handleAuthChange(user) {
     const urlParams = new URLSearchParams(window.location.search);
     const urlGameId = urlParams.get("game");
     console.log("urlGameId:", urlGameId);
+
     if (urlGameId && USE_FIREBASE) {
       console.log("Joining game...");
-      joinGame(urlGameId);
+      joinGame(urlGameId); // This flow is fine
     } else {
       console.log("No game in URL, creating/showing lobby.");
       const newLobbyData = createNewGame(currentUser);
+      
       if (USE_FIREBASE) {
-        showLobby();
-        initLobby(null, currentUser, createNewGame, createGame, updateGame);
-        renderLobby(newLobbyData, currentUser);
+        // --- FIX: This is the new, robust flow ---
+        try {
+          // 1. Create the game in Firestore *immediately*
+          console.log("Creating new game in Firestore...");
+          const newGameId = await createGame(newLobbyData);
+          gameId = newGameId; // Set module-level gameId
+          
+          // 2. Update the URL (so refresh works)
+          window.history.replaceState(null, null, `?game=${newGameId}`);
+          
+          // 3. Show lobby and init with the *real* gameId
+          showLobby();
+          initLobby(newGameId, currentUser, createNewGame, createGame, updateGame);
+          
+          // 4. Subscribe to the new game
+          unsubscribeFromGame = onGameUpdate(newGameId, handleStateChanges);
+          
+          // 5. Render the lobby (will be quickly replaced by the first snapshot)
+          renderLobby(newLobbyData, currentUser);
+
+        } catch (error) {
+            console.error("Failed to create game:", error);
+            showMessage("Error creating game. Please refresh.", 5000);
+        }
+        // --- End of FIX ---
       } else {
+        // This is the local mode, which was working
         mockGameData = newLobbyData;
         gameId = "local-game";
         initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
@@ -245,7 +271,7 @@ const resetGame = async () => {
   gameId = null;
 };
 
-// FIX: This is the new, simpler logic for the "Play Again" button
+// This is the logic for the "Play Again" button
 const handlePlayAgain = () => {
     if (gameData.hostId !== currentUser.uid) {
         showMessage("Waiting for host to start a new game...");
@@ -255,7 +281,6 @@ const handlePlayAgain = () => {
     console.log("Host is resetting game to lobby...");
 
     // Just reset the game object to a clean lobby state.
-    // This is much more reliable than createNewGame().
     const players = gameData.players.map(p => ({
         id: p.id,
         name: p.name,
@@ -267,6 +292,7 @@ const handlePlayAgain = () => {
     const resetData = {
         phase: "lobby",
         players: players,
+        hostId: gameData.hostId, // Keep the same host
         teams: [
             { id: "team1", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [], cardValue: 0 },
             { id: "team2", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [], cardValue: 0 }
@@ -285,12 +311,9 @@ const handlePlayAgain = () => {
         lastRoundResults: null
     };
     
-    // Hide overlays locally first
     hideGameOver();
     hideRoundSummary();
     
-    // Push the reset state to Firebase.
-    // onSnapshot will see "phase: lobby" and do the rest.
     updateGame(gameId, resetData);
 };
 
@@ -539,7 +562,7 @@ const handleTrumpSelection = (suit) => {
 const toggleDiscardSelection = (card) => {
   if (isProtectedCard(card, gameData.trumpSuit)) {
     showMessage(
-      `<span class="text-red-400">Cannot discard protected cards.</span>`,
+      `<span classtext-red-400">Cannot discard protected cards.</span>`,
       2000
     );
     return;
@@ -909,7 +932,6 @@ const handleStateChanges = (newGameData) => {
         handleBid,
         handleTrumpSelection,
         handleDiscard,
-        // FIX: Remove handlePlayAgain from here
         startNewRound,
         currentUser
       );
@@ -924,7 +946,6 @@ const handleStateChanges = (newGameData) => {
         handleBid,
         handleTrumpSelection,
         handleDiscard,
-        // FIX: Remove handlePlayAgain from here
         startNewRound,
         currentUser
       );
@@ -1162,9 +1183,6 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("login-anonymous")
     .addEventListener("click", handleAnonymousLogin);
 
-  // FIX: This is the single source of truth for these buttons.
-  // "Play Again" (on game over screen) -> handlePlayAgain
-  // "Reset All" (in footer) -> resetGame
   document
     .getElementById("play-again-button")
     .addEventListener("click", handlePlayAgain);
