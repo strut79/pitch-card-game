@@ -60,6 +60,8 @@ import {
   updatePointDrawers,
   updateUI,
   showGameOver,
+  hideGameOver, // FIX: Import hideGameOver
+  isRoundSummaryVisible, // FIX: Import isRoundSummaryVisible
   showAuthContainer,
   hideAuthContainer,
   showLobby,
@@ -196,9 +198,6 @@ function handleAuthChange(user) {
 
 // --- Game Logic: Core ---
 
-// FIX: Removed unused handleTeamSelection and handleStartGame.
-// The real logic is now correctly encapsulated in lobby.js.
-
 const joinGame = async (id) => {
   if (!USE_FIREBASE) return; // Should not be called in local mode
 
@@ -241,6 +240,7 @@ const joinGame = async (id) => {
   unsubscribeFromGame = onGameUpdate(gameId, handleStateChanges);
 };
 
+// FIX: This is for the "Reset All" button.
 const resetGame = () => {
   console.log("Resetting game...");
   // Unsubscribe from old game
@@ -257,8 +257,36 @@ const resetGame = () => {
   // Go back to auth screen
   hideLobby();
   hideGame();
-  showGameOver(null); // FIX: This is now safe due to the fix in ui.js
+  hideGameOver(); // FIX: Explicitly hide the game over screen
   showAuthContainer();
+};
+
+// FIX: This is for the "Play Again" button
+const handlePlayAgain = () => {
+    if (gameData.hostId !== currentUser.uid) {
+        showMessage("Waiting for host to start a new game...");
+        return;
+    }
+    
+    console.log("Host is starting a new game...");
+    
+    // Create a fresh lobby state, but re-use player names/IDs
+    const newLobbyData = createNewGame(currentUser);
+    newLobbyData.players = gameData.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        isOnline: p.id === currentUser.uid, // Host is online
+        isAI: p.isAI,
+        team: null // Reset teams
+    }));
+    
+    // Hide UI overlays
+    hideGameOver();
+    hideRoundSummary();
+    
+    // Update the existing game document to the new lobby state
+    // onGameUpdate will handle the rest
+    updateGame(gameId, newLobbyData);
 };
 
 const startNewRound = () => {
@@ -886,6 +914,8 @@ const handleStateChanges = (newGameData) => {
     if (oldPhase !== "lobby") {
       console.log("State Change: Entering Lobby");
       hideGame();
+      hideGameOver(); // FIX: Hide overlays when returning to lobby
+      hideRoundSummary();
       showLobby();
     }
     renderLobby(gameData, currentUser);
@@ -899,7 +929,7 @@ const handleStateChanges = (newGameData) => {
         handleBid,
         handleTrumpSelection,
         handleDiscard,
-        resetGame, // Use resetGame for "Play Again"
+        handlePlayAgain, // FIX: Pass handlePlayAgain
         startNewRound,
         currentUser
       );
@@ -915,7 +945,7 @@ const handleStateChanges = (newGameData) => {
         handleBid,
         handleTrumpSelection,
         handleDiscard,
-        resetGame,
+        handlePlayAgain, // FIX: Pass handlePlayAgain
         startNewRound,
         currentUser
       );
@@ -1120,9 +1150,8 @@ const handleStateChanges = (newGameData) => {
       isMakingMove = false;
       hideMessage();
       
-      // FIX: All players now check for results and display them
-      // FIX: Removed the host-only cleanup block that caused the race condition
-      if (gameData.lastRoundResults && oldPhase === "scoring") {
+      // FIX: New, more robust check for showing summary
+      if (gameData.lastRoundResults && !isRoundSummaryVisible()) {
         displayRoundResults(
           gameData.lastRoundResults,
           gameData,
@@ -1135,8 +1164,8 @@ const handleStateChanges = (newGameData) => {
     case "gameOver":
       isMakingMove = true;
       
-      // FIX: All players also show final round results
-      if (gameData.lastRoundResults && oldPhase === "scoring") {
+      // FIX: New, more robust check for showing summary
+      if (gameData.lastRoundResults && !isRoundSummaryVisible()) {
          displayRoundResults(
           gameData.lastRoundResults,
           gameData,
@@ -1161,10 +1190,8 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("login-anonymous")
     .addEventListener("click", handleAnonymousLogin);
   
-  // FIX: Removed initLobby from here. It's now called in handleAuthChange.
-  
-  // Wire up "Play Again"
-  document.getElementById("play-again-button").addEventListener("click", resetGame);
+  // FIX: Wire "Play Again" to handlePlayAgain, "Reset All" to resetGame
+  document.getElementById("play-again-button").addEventListener("click", handlePlayAgain);
   document.getElementById("full-reset-button").addEventListener("click", resetGame);
 
 
@@ -1177,4 +1204,5 @@ document.addEventListener("DOMContentLoaded", () => {
     mockLogin(handleAuthChange);
   }
 });
+
 
