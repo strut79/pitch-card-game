@@ -154,7 +154,6 @@ let gameId = null;
 let unsubscribeFromGame = () => {}; // To store the onSnapshot unsub function
 
 // --- Auth ---
-// FIX: Made handleAuthChange async to support awaiting createGame
 async function handleAuthChange(user) {
   console.log("handleAuthChange called");
   if (user) {
@@ -167,42 +166,37 @@ async function handleAuthChange(user) {
 
     if (urlGameId && USE_FIREBASE) {
       console.log("Joining game...");
-      joinGame(urlGameId); // This flow is fine
+      joinGame(urlGameId);
     } else {
       console.log("No game in URL, creating/showing lobby.");
       const newLobbyData = createNewGame(currentUser);
       
       if (USE_FIREBASE) {
-        // --- FIX: This is the new, robust flow ---
         try {
-          // 1. Create the game in Firestore *immediately*
           console.log("Creating new game in Firestore...");
           const newGameId = await createGame(newLobbyData);
-          gameId = newGameId; // Set module-level gameId
+          gameId = newGameId; 
           
-          // 2. Update the URL (so refresh works)
           window.history.replaceState(null, null, `?game=${newGameId}`);
           
-          // 3. Show lobby and init with the *real* gameId
           showLobby();
-          initLobby(newGameId, currentUser, createNewGame, createGame, updateGame);
+          // FIX: Removed the extra 'createGame' argument.
+          // This was the bug.
+          initLobby(newGameId, currentUser, createNewGame, updateGame);
           
-          // 4. Subscribe to the new game
           unsubscribeFromGame = onGameUpdate(newGameId, handleStateChanges);
           
-          // 5. Render the lobby (will be quickly replaced by the first snapshot)
           renderLobby(newLobbyData, currentUser);
 
         } catch (error) {
             console.error("Failed to create game:", error);
             showMessage("Error creating game. Please refresh.", 5000);
         }
-        // --- End of FIX ---
       } else {
-        // This is the local mode, which was working
         mockGameData = newLobbyData;
         gameId = "local-game";
-        initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
+        // FIX: Removed the extra 'createGame' argument.
+        initLobby(gameId, currentUser, createNewGame, updateGame);
         unsubscribeFromGame = mockOnGameUpdate(gameId, handleStateChanges);
       }
     }
@@ -231,7 +225,8 @@ const joinGame = async (id) => {
     window.history.replaceState(null, null, window.location.pathname);
     const newLobbyData = createNewGame(currentUser);
     showLobby();
-    initLobby(null, currentUser, createNewGame, createGame, updateGame);
+    // FIX: Removed the extra 'createGame' argument.
+    initLobby(null, currentUser, createNewGame, updateGame);
     renderLobby(newLobbyData, currentUser);
     return;
   }
@@ -253,7 +248,8 @@ const joinGame = async (id) => {
     await updateGame(gameId, { players: existingGameData.players });
   }
 
-  initLobby(gameId, currentUser, createNewGame, createGame, updateGame);
+  // FIX: Removed the extra 'createGame' argument.
+  initLobby(gameId, currentUser, createNewGame, updateGame);
   unsubscribeFromGame = onGameUpdate(gameId, handleStateChanges);
 };
 
@@ -280,7 +276,6 @@ const handlePlayAgain = () => {
     
     console.log("Host is resetting game to lobby...");
 
-    // Just reset the game object to a clean lobby state.
     const players = gameData.players.map(p => ({
         id: p.id,
         name: p.name,
@@ -292,7 +287,7 @@ const handlePlayAgain = () => {
     const resetData = {
         phase: "lobby",
         players: players,
-        hostId: gameData.hostId, // Keep the same host
+        hostId: gameData.hostId, 
         teams: [
             { id: "team1", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [], cardValue: 0 },
             { id: "team2", players: [], score: 0, roundPoints: 0, cardsWon: [], pointCards: [], cardValue: 0 }
