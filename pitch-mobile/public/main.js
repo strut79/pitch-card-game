@@ -71,7 +71,7 @@ import {
 import { initLobby, renderLobby } from "./lobby.js";
 
 // --- LOCAL TEST TOGGLE ---
-const USE_FIREBASE = false;
+const USE_FIREBASE = true;
 console.log("main.js executed");
 
 // --- MOCK FUNCTIONS (for local testing) ---
