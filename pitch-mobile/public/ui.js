@@ -29,7 +29,7 @@ export const initUI = (
   handleBid,
   handleTrumpSelection,
   handleDiscard,
-  startGame,
+  handlePlayAgain, // FIX: Accept handlePlayAgain
   startNewRound,
   currentUser
 ) => {
@@ -134,6 +134,12 @@ export const initUI = (
   document
     .getElementById("discard-button")
     .addEventListener("click", handleDiscard);
+
+  // FIX: Wire up playAgainButton to handlePlayAgain
+  // We do it here (even though it's also in main.js) to ensure
+  // the initUI function has all UI wiring.
+  playAgainButton.onclick = handlePlayAgain; 
+
 
   team1DrawerTab.addEventListener("click", () =>
     team1Drawer.classList.toggle("drawer-open")
@@ -821,7 +827,8 @@ export const updateUI = (
 
 export const showGameOver = (gameData, currentUser) => {
   hideMessage();
-  if (roundSummaryOverlay) roundSummaryOverlay.classList.add("hidden");
+  // FIX: Do NOT hide the round summary here, handleStateChange will do it
+  // if (roundSummaryOverlay) roundSummaryOverlay.classList.add("hidden");
 
   // Handle gameData being null or undefined
   if (!gameData || !gameData.teams || !currentUser) {
@@ -868,6 +875,11 @@ export const showGameOver = (gameData, currentUser) => {
   if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
 };
 
+// FIX: Add hideGameOver function
+export const hideGameOver = () => {
+  if (gameOverOverlay) gameOverOverlay.classList.add("hidden");
+};
+
 export const showAuthContainer = () => {
   console.log("showAuthContainer called");
   if (authContainer) authContainer.classList.remove("hidden");
@@ -900,4 +912,11 @@ export const showGame = () => {
 export const hideRoundSummary = () => {
   if (roundSummaryOverlay) roundSummaryOverlay.classList.add("hidden");
 };
+
+// FIX: Add isRoundSummaryVisible helper
+export const isRoundSummaryVisible = () => {
+    if (!roundSummaryOverlay) return false;
+    return !roundSummaryOverlay.classList.contains("hidden");
+};
+
 
